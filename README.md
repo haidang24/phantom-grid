@@ -9,8 +9,7 @@ It turns a normal Linux server into a controlled, deceptive attack surface that:
 - Silently redirects suspicious traffic into an internal honeypot, and
 - Records attacker activity in real time for forensics and threat intelligence.
 
-![Phantom Grid Dashboard](assets/demo.png)
-_Example TUI dashboard (replace with your own screenshot)._
+![Phantom Grid Dashboard](assets/dashboard.png)
 
 ---
 
