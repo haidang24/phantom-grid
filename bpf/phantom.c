@@ -306,10 +306,10 @@ int phantom_prog(struct xdp_md *ctx) {
         }
 
         // 3. THE MIRAGE: Pass Fake Ports, Drop Real Ports
-        // THE MIRAGE: Honeypot đã bind nhiều port giả (80, 443, 3306, etc.)
-        // Khi quét từ bên ngoài, nmap sẽ thấy các port này "mở" (honeypot phản hồi SYN-ACK)
-        // Các port thật (không phải fake ports, không phải critical assets) sẽ bị DROP
-        // Kết quả: Hacker chỉ thấy các port giả, không thấy các port thật
+        // THE MIRAGE: Honeypot bind nhiều port giả (80, 443, 3306, etc.)
+        // XDP pass các fake ports để honeypot có thể phản hồi SYN-ACK trực tiếp
+        // Kết quả: Khi quét từ bên ngoài, nmap sẽ thấy nhiều port "mở" (honeypot phản hồi)
+        // Các port thật (không phải fake ports) sẽ bị DROP → ẩn hoàn toàn
         
         __u8 *flags_byte = ((__u8 *)tcp + 13);
         __u8 flags = *flags_byte;
@@ -317,12 +317,13 @@ int phantom_prog(struct xdp_md *ctx) {
         __u8 ack = flags & 0x10;
         
         // CHỈ xử lý SYN packets (không có ACK) - đây là inbound connection initiation
+        // Bỏ qua các Critical Assets (đã được bảo vệ bởi Phantom Protocol)
         // Cho phép SYN+ACK, ACK, FIN, RST và các packets khác pass through
         // Điều này đảm bảo:
         // - Outbound connections (SYN từ server) hoạt động bình thường
         // - Established connections (ACK, data packets) hoạt động bình thường
-        if (syn && !ack) {
-            // Nếu là fake port → PASS (honeypot đã bind, sẽ nhận connection và phản hồi SYN-ACK)
+        if (syn && !ack && !is_critical_asset_port(tcp->dest)) {
+            // Nếu là fake port → PASS (honeypot đã bind, sẽ phản hồi SYN-ACK)
             if (is_fake_port(tcp->dest)) {
                 __u32 key = 0;
                 __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
@@ -330,6 +331,16 @@ int phantom_prog(struct xdp_md *ctx) {
                 
                 mutate_os_personality(ip, tcp);
                 return XDP_PASS; // Honeypot sẽ phản hồi SYN-ACK, tạo ảo giác port "mở"
+            }
+            
+            // Nếu là honeypot port (9999) → PASS (fallback cho các port không bind được)
+            if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
+                __u32 key = 0;
+                __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
+                if (val) __sync_fetch_and_add(val, 1);
+                
+                mutate_os_personality(ip, tcp);
+                return XDP_PASS;
             }
             
             // Nếu không phải fake port và không phải critical asset → DROP (ẩn port)
@@ -340,7 +351,7 @@ int phantom_prog(struct xdp_md *ctx) {
         // Tất cả các packets khác (ACK, FIN, RST, data) sẽ pass through
         // Điều này cho phép:
         // - Outbound connections hoạt động bình thường
-        // - Established connections tiếp tục hoạt động sau khi SYN được xử lý
+        // - Established connections tiếp tục hoạt động sau khi SYN được redirect
     }
     return XDP_PASS;
 }

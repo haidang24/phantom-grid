@@ -589,19 +589,25 @@ var fakePorts = []int{
 
 // --- HONEYPOT LOGIC ---
 // "The Mirage": Bind nhiều port giả để tạo "Ghost Grid"
-// Khi quét từ bên ngoài, nmap sẽ thấy nhiều port "mở" thay vì chỉ thấy port 9999
+// Honeypot sẽ cố gắng bind tất cả các fake ports
+// Nếu bind thành công, XDP sẽ pass packets đến port đó
+// Nếu bind thất bại (port đã được sử dụng), XDP sẽ redirect đến port 9999 (fallback)
 func startHoneypot() {
 	var listeners []net.Listener
+	var boundPorts []int
 	var wg sync.WaitGroup
 
-	// Bind tất cả các port giả
+	// Cố gắng bind tất cả các port giả
 	for _, port := range fakePorts {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
-			// Port có thể đã được sử dụng, skip
+			// Port có thể đã được sử dụng, log và skip
+			// XDP sẽ redirect các port này đến 9999
+			logChan <- fmt.Sprintf("[WARN] Cannot bind port %d: %v (XDP will redirect to 9999)", port, err)
 			continue
 		}
 		listeners = append(listeners, ln)
+		boundPorts = append(boundPorts, port)
 		logChan <- fmt.Sprintf("[SYSTEM] Honeypot listening on port %d", port)
 
 		wg.Add(1)
@@ -613,18 +619,41 @@ func startHoneypot() {
 					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port %d: %v", p, err)
 					continue
 				}
-				// Lưu port gốc vào connection context để honeypot biết port nào đang được connect
+				// Bind trực tiếp, biết port gốc
 				go handleConnection(conn, p)
 			}
 		}(ln, port)
 	}
 
+	// Fallback: Bind port 9999 cho các port không bind được
+	ln9999, err := net.Listen("tcp", ":9999")
+	if err != nil {
+		logChan <- fmt.Sprintf("[WARN] Cannot bind port 9999: %v", err)
+	} else {
+		listeners = append(listeners, ln9999)
+		logChan <- "[SYSTEM] Honeypot listening on port 9999 (fallback for redirected ports)"
+		
+		wg.Add(1)
+		go func(l net.Listener) {
+			defer wg.Done()
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port 9999: %v", err)
+					continue
+				}
+				// XDP đã redirect từ fake port đến 9999
+				go handleConnection(conn, 9999)
+			}
+		}(ln9999)
+	}
+
 	if len(listeners) == 0 {
-		logChan <- "[ERROR] Failed to bind any fake ports"
+		logChan <- "[ERROR] Failed to bind any ports"
 		return
 	}
 
-	logChan <- fmt.Sprintf("[SYSTEM] Honeypot bound to %d fake ports (The Mirage active)", len(listeners))
+	logChan <- fmt.Sprintf("[SYSTEM] Honeypot bound to %d ports (%d direct, 1 fallback) - The Mirage active", len(listeners), len(boundPorts))
 	
 	// Cleanup on exit
 	defer func() {
@@ -699,7 +728,16 @@ func handleConnection(conn net.Conn, originalPort int) {
 	t := time.Now().Format("15:04:05")
 
 	// Chọn service type dựa trên port (để tạo ảo giác thực tế hơn)
-	serviceType := selectServiceByPort(originalPort)
+	// Nếu originalPort là 9999, có nghĩa là XDP đã redirect từ fake port
+	// Sử dụng random service để tạo "Ghost Grid" effect
+	var serviceType string
+	if originalPort == 9999 {
+		// XDP đã redirect, không biết port gốc, sử dụng random
+		serviceType = selectRandomService()
+	} else {
+		// Bind trực tiếp, biết port gốc
+		serviceType = selectServiceByPort(originalPort)
+	}
 	banner := getRandomBanner(serviceType)
 
 	logChan <- fmt.Sprintf("[%s] TRAP HIT! IP: %s | Port: %d | Service: %s", t, ip, originalPort, strings.ToUpper(serviceType))
