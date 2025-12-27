@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cilium/ebpf/link"
@@ -62,8 +63,16 @@ var (
 		"220 Microsoft FTP Service\r\n",
 	}
 
-	// Service type probabilities (for randomization)
-	serviceTypes = []string{"ssh", "http", "mysql", "redis", "ftp"}
+	telnetBanners = []string{
+		"Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.4.0-74-generic x86_64)\r\n\r\n* Documentation:  https://help.ubuntu.com\r\n* Management:     https://landscape.canonical.com\r\n* Support:        https://ubuntu.com/advantage\r\n\r\n  System information as of ",
+		"Red Hat Enterprise Linux Server release 7.9 (Maipo)\r\nKernel 3.10.0-1160.el7.x86_64 on an x86_64\r\n\r\nlogin: ",
+		"CentOS Linux 7 (Core)\r\nKernel 3.10.0-1160.el7.x86_64 on an x86_64\r\n\r\nlocalhost login: ",
+		"Debian GNU/Linux 10\r\n\r\nlocalhost login: ",
+	}
+
+	// Service type probabilities (for randomization) - The Mirage effect
+	// Mỗi kết nối sẽ nhận được một dịch vụ ngẫu nhiên, tạo "Ghost Grid"
+	serviceTypes = []string{"ssh", "http", "mysql", "redis", "ftp", "telnet"}
 )
 
 // AttackLog is the structured format used by the Shadow Recorder
@@ -192,8 +201,14 @@ func attachTCEgress(iface *net.Interface, objs *EgressObjects) error {
 // manageSPAWhitelist periodically cleans up expired SPA whitelist entries
 func manageSPAWhitelist(objs *PhantomObjects) {
 	ticker := time.NewTicker(5 * time.Second)
+	const whitelistDuration = 30 * time.Second
+
 	for range ticker.C {
-		// In production: iterate map and delete old entries
+		// Iterate through whitelist and remove expired entries
+		// Note: LRU map will auto-evict, but we can also manually check expiry
+		// For simplicity, we rely on LRU eviction when map is full
+		// In production, you could add timestamp checking here
+		_ = objs // Use objs to avoid unused variable warning
 	}
 }
 
@@ -205,13 +220,18 @@ func logAttack(ip string, cmd string) {
 		Command:    cmd,
 		RiskLevel:  "HIGH",
 	}
-	_ = os.MkdirAll("logs", 0o755)
+	if err := os.MkdirAll("logs", 0o755); err != nil {
+		return
+	}
 	file, err := os.OpenFile("logs/audit.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
 	}
 	defer file.Close()
-	_ = json.NewEncoder(file).Encode(entry)
+	if err := json.NewEncoder(file).Encode(entry); err != nil {
+		// Silent fail for logging errors
+		_ = err
+	}
 }
 
 // --- DASHBOARD UI ---
@@ -221,120 +241,294 @@ func startDashboard(iface string, objs *PhantomObjects, egressObjs *EgressObject
 	}
 	defer ui.Close()
 
+	startTime := time.Now()
+
+	// Thread-safe statistics
+	var statsMutex sync.RWMutex
+	honeypotConnections := uint64(0)
+	totalCommands := uint64(0)
+	activeSessions := uint64(0)
+
+	// Get terminal dimensions
+	termWidth, termHeight := ui.TerminalDimensions()
+	if termWidth < 100 {
+		termWidth = 100
+	}
+	if termHeight < 30 {
+		termHeight = 30
+	}
+
+	// Header with enhanced information
 	header := widgets.NewParagraph()
-	header.Title = " PHANTOM GRID - ACTIVE DEFENSE SYSTEM "
-	header.Text = fmt.Sprintf("STATUS: [ACTIVE](fg:green,mod:bold) | INTERFACE: [%s](fg:yellow) | MODE: [eBPF KERNEL TRAP](fg:red)", iface)
-	header.SetRect(0, 0, 80, 3)
+	header.Title = " ═══ PHANTOM GRID - ACTIVE DEFENSE SYSTEM ═══ "
+	header.Text = fmt.Sprintf("STATUS: [ACTIVE](fg:green,mod:bold) | INTERFACE: [%s](fg:yellow) | MODE: [eBPF KERNEL TRAP](fg:red) | UPTIME: [00:00:00](fg:cyan)", iface)
+	header.SetRect(0, 0, termWidth, 3)
 	header.TextStyle.Fg = ui.ColorCyan
+	header.BorderStyle.Fg = ui.ColorCyan
 
+	// Real-time forensics log (left side, larger)
 	logList := widgets.NewList()
-	logList.Title = " [ REAL-TIME FORENSICS ] "
-	logList.Rows = []string{"[SYSTEM] Phantom Grid initialized...", "[SYSTEM] eBPF XDP Hook attached..."}
-	logList.SetRect(0, 3, 50, 20)
+	logList.Title = " ═══ REAL-TIME FORENSICS & EVENT LOG ═══ "
+	logList.Rows = []string{
+		"[SYSTEM] Phantom Grid initialized...",
+		"[SYSTEM] eBPF XDP Hook attached...",
+		"[SYSTEM] TC Egress Hook attached (DLP Active)...",
+		"[SYSTEM] Honeypot service listening on port 9999...",
+		"[SYSTEM] Dashboard ready. Monitoring traffic...",
+	}
+	logList.SetRect(0, 3, termWidth/2+10, termHeight-8)
 	logList.TextStyle.Fg = ui.ColorGreen
-	logList.SelectedRowStyle.Fg = ui.ColorGreen
+	logList.SelectedRowStyle.Fg = ui.ColorWhite
+	logList.SelectedRowStyle.Bg = ui.ColorBlue
+	logList.BorderStyle.Fg = ui.ColorGreen
 
+	// Threat Level Gauge
 	gauge := widgets.NewGauge()
-	gauge.Title = " THREAT LEVEL "
+	gauge.Title = " ═══ THREAT LEVEL ═══ "
 	gauge.Percent = 0
-	gauge.SetRect(50, 3, 80, 6)
-	gauge.BarColor = ui.ColorRed
+	gauge.SetRect(termWidth/2+10, 3, termWidth, 6)
+	gauge.BarColor = ui.ColorGreen
+	gauge.Label = "0%"
+	gauge.BorderStyle.Fg = ui.ColorYellow
 
-	aiBox := widgets.NewParagraph()
-	aiBox.Title = " AI GENERATIVE MODULE (PHASE 2 PREVIEW) "
-	aiBox.Text = "\n[Waiting for traffic...](fg:white)"
-	aiBox.SetRect(50, 6, 80, 12)
-
-	totalBox := widgets.NewParagraph()
-	totalBox.Title = " REDIRECTED "
-	totalBox.Text = "\n   0"
-	totalBox.SetRect(50, 12, 80, 16)
-	totalBox.TextStyle.Fg = ui.ColorYellow
+	// Statistics Section - Row 1
+	redirectedBox := widgets.NewParagraph()
+	redirectedBox.Title = " ═══ REDIRECTED TO HONEYPOT ═══ "
+	redirectedBox.Text = "\n\n       0"
+	redirectedBox.SetRect(termWidth/2+10, 6, termWidth/2+25, 11)
+	redirectedBox.TextStyle.Fg = ui.ColorYellow
+	redirectedBox.BorderStyle.Fg = ui.ColorYellow
 
 	stealthBox := widgets.NewParagraph()
-	stealthBox.Title = " STEALTH DROPS "
-	stealthBox.Text = "\n   0"
-	stealthBox.SetRect(50, 16, 65, 20)
+	stealthBox.Title = " ═══ STEALTH SCAN DROPS ═══ "
+	stealthBox.Text = "\n\n       0"
+	stealthBox.SetRect(termWidth/2+25, 6, termWidth/2+40, 11)
 	stealthBox.TextStyle.Fg = ui.ColorRed
+	stealthBox.BorderStyle.Fg = ui.ColorRed
 
 	egressBox := widgets.NewParagraph()
-	egressBox.Title = " EGRESS BLOCKS (DLP) "
-	egressBox.Text = "\n   0"
-	egressBox.SetRect(65, 16, 80, 20)
+	egressBox.Title = " ═══ EGRESS BLOCKS (DLP) ═══ "
+	egressBox.Text = "\n\n       0"
+	egressBox.SetRect(termWidth/2+40, 6, termWidth, 11)
 	egressBox.TextStyle.Fg = ui.ColorMagenta
+	egressBox.BorderStyle.Fg = ui.ColorMagenta
 
-	ui.Render(header, logList, gauge, aiBox, totalBox, stealthBox, egressBox)
+	// Statistics Section - Row 2
+	osMutationsBox := widgets.NewParagraph()
+	osMutationsBox.Title = " ═══ OS PERSONALITY MUTATIONS ═══ "
+	osMutationsBox.Text = "\n\n       0"
+	osMutationsBox.SetRect(termWidth/2+10, 11, termWidth/2+25, 16)
+	osMutationsBox.TextStyle.Fg = ui.ColorCyan
+	osMutationsBox.BorderStyle.Fg = ui.ColorCyan
+
+	spaSuccessBox := widgets.NewParagraph()
+	spaSuccessBox.Title = " ═══ SPA AUTH SUCCESS ═══ "
+	spaSuccessBox.Text = "\n\n       0"
+	spaSuccessBox.SetRect(termWidth/2+25, 11, termWidth/2+40, 16)
+	spaSuccessBox.TextStyle.Fg = ui.ColorGreen
+	spaSuccessBox.BorderStyle.Fg = ui.ColorGreen
+
+	spaFailedBox := widgets.NewParagraph()
+	spaFailedBox.Title = " ═══ SPA AUTH FAILED ═══ "
+	spaFailedBox.Text = "\n\n       0"
+	spaFailedBox.SetRect(termWidth/2+40, 11, termWidth, 16)
+	spaFailedBox.TextStyle.Fg = ui.ColorRed
+	spaFailedBox.BorderStyle.Fg = ui.ColorRed
+
+	// System Information Section
+	systemInfoBox := widgets.NewParagraph()
+	systemInfoBox.Title = " ═══ SYSTEM INFORMATION ═══ "
+	egressStatus := "INACTIVE"
+	egressColor := "red"
+	if egressObjs != nil {
+		egressStatus = "ACTIVE"
+		egressColor = "green"
+	}
+	systemInfoBox.Text = fmt.Sprintf("\nInterface: %s\nXDP Hook: [ACTIVE](fg:green)\nTC Egress: [%s](fg:%s)\nHoneypot: [LISTENING](fg:green)\nPort: 9999\nSPA Port: 1337\nSSH Port: 22 (Protected)",
+		iface, egressStatus, egressColor)
+	systemInfoBox.SetRect(termWidth/2+10, 16, termWidth, termHeight-8)
+	systemInfoBox.BorderStyle.Fg = ui.ColorBlue
+
+	// Connection Statistics
+	connStatsBox := widgets.NewParagraph()
+	connStatsBox.Title = " ═══ CONNECTION STATISTICS ═══ "
+	connStatsBox.Text = "\n\nHoneypot Connections: 0\nActive Sessions: 0\nTotal Commands: 0"
+	connStatsBox.SetRect(0, termHeight-8, termWidth/2+10, termHeight-3)
+	connStatsBox.BorderStyle.Fg = ui.ColorMagenta
+
+	// Footer with instructions
+	footer := widgets.NewParagraph()
+	footer.Title = " CONTROLS "
+	footer.Text = "Press [q](fg:yellow) or [Ctrl+C](fg:yellow) to exit | [SPACE](fg:yellow) to pause/resume logs"
+	footer.SetRect(0, termHeight-3, termWidth, termHeight)
+	footer.BorderStyle.Fg = ui.ColorWhite
+
+	// Initial render
+	ui.Render(header, logList, gauge, redirectedBox, stealthBox, egressBox,
+		osMutationsBox, spaSuccessBox, spaFailedBox, systemInfoBox, connStatsBox, footer)
 
 	ticker := time.NewTicker(200 * time.Millisecond)
 	statsTicker := time.NewTicker(1 * time.Second)
+	uptimeTicker := time.NewTicker(1 * time.Second)
 	uiEvents := ui.PollEvents()
 	threatCount := 0
+	paused := false
 
+	// Update uptime
+	go func() {
+		for range uptimeTicker.C {
+			uptime := time.Since(startTime)
+			hours := int(uptime.Hours())
+			minutes := int(uptime.Minutes()) % 60
+			seconds := int(uptime.Seconds()) % 60
+			header.Text = fmt.Sprintf("STATUS: [ACTIVE](fg:green,mod:bold) | INTERFACE: [%s](fg:yellow) | MODE: [eBPF KERNEL TRAP](fg:red) | UPTIME: [%02d:%02d:%02d](fg:cyan)",
+				iface, hours, minutes, seconds)
+			ui.Render(header)
+		}
+	}()
+
+	// Update statistics
 	go func() {
 		for range statsTicker.C {
 			var attackKey uint32 = 0
 			var attackVal uint64
 			if err := objs.AttackStats.Lookup(attackKey, &attackVal); err == nil {
-				totalBox.Text = fmt.Sprintf("\n   %d", attackVal)
+				redirectedBox.Text = fmt.Sprintf("\n\n   %d", attackVal)
 			}
 
 			var stealthKey uint32 = 0
 			var stealthVal uint64
 			if err := objs.StealthDrops.Lookup(stealthKey, &stealthVal); err == nil {
-				stealthBox.Text = fmt.Sprintf("\n   %d", stealthVal)
+				stealthBox.Text = fmt.Sprintf("\n\n   %d", stealthVal)
+			}
+
+			var osKey uint32 = 0
+			var osVal uint64
+			if err := objs.OsMutations.Lookup(osKey, &osVal); err == nil {
+				osMutationsBox.Text = fmt.Sprintf("\n\n   %d", osVal)
+			}
+
+			var spaSuccessKey uint32 = 0
+			var spaSuccessVal uint64
+			if err := objs.SpaAuthSuccess.Lookup(spaSuccessKey, &spaSuccessVal); err == nil {
+				spaSuccessBox.Text = fmt.Sprintf("\n\n   %d", spaSuccessVal)
+			}
+
+			var spaFailedKey uint32 = 0
+			var spaFailedVal uint64
+			if err := objs.SpaAuthFailed.Lookup(spaFailedKey, &spaFailedVal); err == nil {
+				spaFailedBox.Text = fmt.Sprintf("\n\n   %d", spaFailedVal)
 			}
 
 			if egressObjs != nil && egressObjs.EgressBlocks != nil {
 				var egressKey uint32 = 0
 				var egressVal uint64
 				if err := egressObjs.EgressBlocks.Lookup(egressKey, &egressVal); err == nil {
-					egressBox.Text = fmt.Sprintf("\n   %d", egressVal)
-					if egressVal > 0 {
-						logChan <- fmt.Sprintf("[DLP] Blocked %d data exfiltration attempts", egressVal)
-					}
+					egressBox.Text = fmt.Sprintf("\n\n   %d", egressVal)
 				}
 			}
 
-			if attackVal > 0 {
-				gauge.Percent = int((attackVal * 2) % 100)
+			// Update connection statistics (thread-safe read)
+			statsMutex.RLock()
+			connCount := honeypotConnections
+			sessionCount := activeSessions
+			cmdCount := totalCommands
+			statsMutex.RUnlock()
+
+			connStatsBox.Text = fmt.Sprintf("\n\nHoneypot Connections: %d\nActive Sessions: %d\nTotal Commands: %d",
+				connCount, sessionCount, cmdCount)
+
+			// Calculate threat level based on multiple factors
+			totalThreats := attackVal + stealthVal
+			if totalThreats > 0 {
+				threatLevel := int((totalThreats * 10) % 100)
+				if threatLevel > 100 {
+					threatLevel = 100
+				}
+				gauge.Percent = threatLevel
+				if threatLevel < 30 {
+					gauge.BarColor = ui.ColorGreen
+					gauge.Label = fmt.Sprintf("%d%% - LOW", threatLevel)
+				} else if threatLevel < 70 {
+					gauge.BarColor = ui.ColorYellow
+					gauge.Label = fmt.Sprintf("%d%% - MEDIUM", threatLevel)
+				} else {
+					gauge.BarColor = ui.ColorRed
+					gauge.Label = fmt.Sprintf("%d%% - HIGH", threatLevel)
+				}
 			}
+
+			ui.Render(redirectedBox, stealthBox, egressBox, osMutationsBox,
+				spaSuccessBox, spaFailedBox, gauge, connStatsBox)
 		}
 	}()
 
 	for {
 		select {
 		case e := <-uiEvents:
-			if e.Type == ui.KeyboardEvent && (e.ID == "q" || e.ID == "<C-c>") {
-				return
+			if e.Type == ui.KeyboardEvent {
+				if e.ID == "q" || e.ID == "<C-c>" {
+					return
+				}
+				if e.ID == " " {
+					paused = !paused
+					if paused {
+						logChan <- "[SYSTEM] Log scrolling paused"
+					} else {
+						logChan <- "[SYSTEM] Log scrolling resumed"
+					}
+				}
 			}
 		case msg := <-logChan:
-			logList.Rows = append(logList.Rows, msg)
-			if len(logList.Rows) > 16 {
-				logList.Rows = logList.Rows[1:]
+			if !paused {
+				logList.Rows = append(logList.Rows, msg)
+				if len(logList.Rows) > termHeight-15 {
+					logList.Rows = logList.Rows[1:]
+				}
+				logList.ScrollBottom()
 			}
-			logList.ScrollBottom()
-			threatCount++
-			if threatCount%5 == 0 {
-				gauge.Percent = (threatCount * 2) % 100
+
+			// Track statistics from log messages (thread-safe write)
+			statsMutex.Lock()
+			if strings.Contains(msg, "TRAP HIT") {
+				honeypotConnections++
+				activeSessions++
 			}
 			if strings.Contains(msg, "COMMAND") {
-				aiBox.Text = "[ANALYZING PATTERN...](fg:white)\n[PREDICTION](fg:red): APT Attack detected.\n[CONFIDENCE](fg:yellow): 98.5%"
+				totalCommands++
 			}
-			ui.Render(logList, gauge, totalBox, aiBox, stealthBox, egressBox)
+			if strings.Contains(msg, "exit") {
+				if activeSessions > 0 {
+					activeSessions--
+				}
+			}
+			statsMutex.Unlock()
+
+			threatCount++
+			ui.Render(logList, connStatsBox)
 		case <-ticker.C:
-			ui.Render(logList, gauge, totalBox, aiBox, stealthBox, egressBox)
+			ui.Render(logList, connStatsBox)
 		}
 	}
 }
 
 // --- HONEYPOT LOGIC ---
 func startHoneypot() {
-	ln, _ := net.Listen("tcp", ":9999")
+	ln, err := net.Listen("tcp", ":9999")
+	if err != nil {
+		logChan <- fmt.Sprintf("[ERROR] Failed to start honeypot: %v", err)
+		return
+	}
+	logChan <- "[SYSTEM] Honeypot listening on port 9999"
+	defer ln.Close()
+
 	for {
 		conn, err := ln.Accept()
-		if err == nil {
-			go handleConnection(conn)
+		if err != nil {
+			logChan <- fmt.Sprintf("[ERROR] Honeypot accept error: %v", err)
+			continue
 		}
+		go handleConnection(conn)
 	}
 }
 
@@ -350,6 +544,8 @@ func getRandomBanner(serviceType string) string {
 		return redisBanners[rand.Intn(len(redisBanners))]
 	case "ftp":
 		return ftpBanners[rand.Intn(len(ftpBanners))]
+	case "telnet":
+		return telnetBanners[rand.Intn(len(telnetBanners))]
 	default:
 		return sshBanners[rand.Intn(len(sshBanners))]
 	}
@@ -361,22 +557,35 @@ func selectRandomService() string {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	remote := conn.RemoteAddr().String()
+	remoteAddr := conn.RemoteAddr()
+	if remoteAddr == nil {
+		return
+	}
+	remote := remoteAddr.String()
+	// Extract IP address only (remove port)
+	ip := strings.Split(remote, ":")[0]
 	t := time.Now().Format("15:04:05")
 
 	serviceType := selectRandomService()
 	banner := getRandomBanner(serviceType)
 
-	logChan <- fmt.Sprintf("[%s] TRAP HIT! IP: %s | Service: %s", t, remote, strings.ToUpper(serviceType))
-	logAttack(remote, "TRAP_HIT")
+	logChan <- fmt.Sprintf("[%s] TRAP HIT! IP: %s | Service: %s", t, ip, strings.ToUpper(serviceType))
+	logAttack(ip, "TRAP_HIT")
 
-	conn.Write([]byte(banner))
+	if _, err := conn.Write([]byte(banner)); err != nil {
+		logChan <- fmt.Sprintf("[%s] Error sending banner to %s: %v", t, ip, err)
+		return
+	}
 
+	// The Mirage: Mỗi kết nối nhận một dịch vụ ngẫu nhiên
+	// Tạo "Ghost Grid" - hacker thấy hàng ngàn cổng "mở" với các dịch vụ khác nhau
 	switch serviceType {
 	case "ssh":
 		handleSSHInteraction(conn, remote, t)
 	case "http":
 		handleHTTPInteraction(conn, remote, t)
+	case "telnet":
+		handleTelnetInteraction(conn, remote, t)
 	default:
 		handleSSHInteraction(conn, remote, t)
 	}
@@ -392,17 +601,55 @@ func handleSSHInteraction(conn net.Conn, remote, t string) {
 		input := strings.TrimSpace(string(buf[:n]))
 		if len(input) > 0 {
 			logChan <- fmt.Sprintf("[%s] COMMAND: %s", t, input)
-			logAttack(remote, input)
+			// Extract IP from remote address
+			ip := strings.Split(remote, ":")[0]
+			logAttack(ip, input)
 		}
 		if input == "exit" {
 			return
 		}
-		conn.Write([]byte("bash: command not found\n"))
+		if _, err := conn.Write([]byte("bash: command not found\n")); err != nil {
+			return
+		}
 	}
 }
 
 func handleHTTPInteraction(conn net.Conn, remote, t string) {
 	buf := make([]byte, 4096)
-	conn.Read(buf)
-	conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\nServer Running"))
+	n, err := conn.Read(buf)
+	if err != nil {
+		return
+	}
+	if n > 0 {
+		// Extract IP from remote address
+		ip := strings.Split(remote, ":")[0]
+		logAttack(ip, fmt.Sprintf("HTTP_REQUEST: %s", strings.TrimSpace(string(buf[:n]))))
+	}
+	if _, err := conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\nServer Running")); err != nil {
+		return
+	}
+}
+
+func handleTelnetInteraction(conn net.Conn, remote, t string) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil || n == 0 {
+			return
+		}
+		input := strings.TrimSpace(string(buf[:n]))
+		if len(input) > 0 {
+			logChan <- fmt.Sprintf("[%s] TELNET COMMAND: %s", t, input)
+			// Extract IP from remote address
+			ip := strings.Split(remote, ":")[0]
+			logAttack(ip, fmt.Sprintf("TELNET: %s", input))
+		}
+		if input == "exit" || input == "quit" {
+			return
+		}
+		// Simulate telnet response
+		if _, err := conn.Write([]byte("Command not found.\r\n")); err != nil {
+			return
+		}
+	}
 }

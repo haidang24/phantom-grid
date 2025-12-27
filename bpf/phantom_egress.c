@@ -90,10 +90,11 @@ int phantom_egress_prog(struct __sk_buff *skb) {
     if (tcp->source != bpf_htons(HONEYPOT_PORT)) return TC_ACT_OK;
     
     __u32 tcp_hdr_len = (tcp->doff) * 4;
-    void *payload = (void *)(tcp + 1);
-    if ((void *)(payload + tcp_hdr_len) > data_end) return TC_ACT_OK;
+    void *tcp_start = (void *)tcp;
+    void *payload = (void *)((char *)tcp_start + tcp_hdr_len);
+    if (payload > data_end) return TC_ACT_OK;
     
-    __u32 payload_len = (__u32)(data_end - (void *)payload);
+    __u32 payload_len = (__u32)(data_end - payload);
     if (payload_len == 0) return TC_ACT_OK;
     if (payload_len > MAX_PAYLOAD_SCAN) payload_len = MAX_PAYLOAD_SCAN;
     

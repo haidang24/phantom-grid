@@ -19,6 +19,16 @@
 #define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
 #define SPA_TOKEN_LEN 24
 
+// Critical Assets Ports - Protected by Phantom Protocol (Default: DROP all traffic)
+// These ports are completely invisible to attackers unless whitelisted via SPA
+#define MYSQL_PORT 3306
+#define POSTGRES_PORT 5432
+#define MONGODB_PORT 27017
+#define REDIS_PORT 6379
+#define ADMIN_PANEL_PORT_1 8080
+#define ADMIN_PANEL_PORT_2 8443
+#define ADMIN_PANEL_PORT_3 9000
+
 #ifndef IPPROTO_TCP
 #define IPPROTO_TCP 6
 #endif
@@ -79,11 +89,15 @@ struct {
     __type(value, __u64);
 } spa_auth_failed SEC(".maps");
 
-// HELPER: Manual Checksum Update
-static __always_inline void update_csum(__u16 *csum, __be32 old_val, __be32 new_val) {
+// HELPER: Manual Checksum Update for 16-bit values (ports, windows)
+// Checksum is calculated in network byte order, so we work directly with __be16
+static __always_inline void update_csum16(__u16 *csum, __be16 old_val, __be16 new_val) {
     __u32 sum = (~(*csum) & 0xffff);
-    sum += (~old_val & 0xffff);
-    sum += (new_val & 0xffff);
+    // Convert to host byte order for arithmetic, then back
+    __u16 old = bpf_ntohs(old_val);
+    __u16 new = bpf_ntohs(new_val);
+    sum += (~old & 0xffff);
+    sum += (new & 0xffff);
     sum = (sum & 0xffff) + (sum >> 16);
     *csum = ~((sum & 0xffff) + (sum >> 16));
 }
@@ -107,13 +121,15 @@ static __always_inline void mutate_os_personality(struct iphdr *ip, struct tcphd
     
     if (old_ttl != new_ttl) {
         ip->ttl = new_ttl;
+        // IP checksum needs to account for TTL change
+        // TTL is in the second byte of the IP header word containing TTL and protocol
         __be16 old_word = bpf_htons(((__u16)old_ttl << 8) | ip->protocol);
         __be16 new_word = bpf_htons(((__u16)new_ttl << 8) | ip->protocol);
-        update_csum(&ip->check, old_word, new_word);
+        update_csum16(&ip->check, old_word, new_word);
     }
     
     if (old_window != new_window) {
-        update_csum(&tcp->check, old_window, new_window);
+        update_csum16(&tcp->check, old_window, new_window);
         tcp->window = new_window;
     }
     
@@ -125,6 +141,19 @@ static __always_inline void mutate_os_personality(struct iphdr *ip, struct tcphd
 static __always_inline int is_spa_whitelisted(__be32 src_ip) {
     __u64 *expiry = bpf_map_lookup_elem(&spa_whitelist, &src_ip);
     return (expiry != NULL);
+}
+
+// Helper: Check if port is a Critical Asset (protected by Phantom Protocol)
+static __always_inline int is_critical_asset_port(__be16 port) {
+    __u16 p = bpf_ntohs(port);
+    return (p == SSH_PORT || 
+            p == MYSQL_PORT || 
+            p == POSTGRES_PORT || 
+            p == MONGODB_PORT || 
+            p == REDIS_PORT || 
+            p == ADMIN_PANEL_PORT_1 || 
+            p == ADMIN_PANEL_PORT_2 || 
+            p == ADMIN_PANEL_PORT_3);
 }
 
 // FIX: Verify function now takes data_end and checks pointers directly
@@ -190,22 +219,26 @@ int phantom_prog(struct xdp_md *ctx) {
     if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = (void *)(ip + 1);
         // Kiểm tra header UDP (8 bytes)
-        if ((void *)(udp + 1) > data_end) return XDP_DROP;
+        if ((void *)(udp + 1) > data_end) return XDP_PASS;
         
+        // CHỈ xử lý SPA Magic Packet, cho phép tất cả UDP traffic khác đi qua
+        // (DNS, DHCP, NTP, etc. cần hoạt động bình thường)
         if (udp->dest == bpf_htons(SPA_MAGIC_PORT)) {
             void *payload = (void *)(udp + 1);
             
             // Gọi hàm verify với data_end để kiểm tra biên bên trong
             if (verify_magic_packet(payload, data_end)) {
                 spa_whitelist_ip(src_ip);
-                return XDP_DROP;
+                return XDP_DROP; // Drop Magic Packet sau khi xử lý
             } else {
                 __u32 key = 0;
                 __u64 *val = bpf_map_lookup_elem(&spa_auth_failed, &key);
                 if (val) __sync_fetch_and_add(val, 1);
-                return XDP_DROP;
+                return XDP_DROP; // Drop invalid Magic Packets
             }
         }
+        // Cho phép tất cả UDP traffic khác đi qua (DNS, DHCP, etc.)
+        return XDP_PASS;
     }
 
     // --- TCP Logic (Defense & Redirection) ---
@@ -214,9 +247,17 @@ int phantom_prog(struct xdp_md *ctx) {
         // Kiểm tra header TCP (20 bytes)
         if ((void *)(tcp + 1) > data_end) return XDP_PASS;
 
-        // 1. Bảo vệ SSH
-        if (tcp->dest == bpf_htons(SSH_PORT)) {
-            if (!is_spa_whitelisted(src_ip)) return XDP_DROP;
+        // 1. THE PHANTOM PROTOCOL: Bảo vệ Critical Assets (SSH, Database, Admin Panel)
+        // Nguyên lý: "Không thể tấn công thứ bạn không nhìn thấy"
+        // Mặc định DROP toàn bộ traffic đến các cổng quan trọng
+        // Chỉ cho phép nếu IP đã được whitelist qua SPA
+        if (is_critical_asset_port(tcp->dest)) {
+            if (!is_spa_whitelisted(src_ip)) {
+                // Server hoàn toàn "chết" (Dead Host) dưới góc nhìn của hacker
+                // Không có phản hồi, không có RST, hoàn toàn im lặng
+                return XDP_DROP;
+            }
+            // IP đã được whitelist qua SPA - cho phép truy cập
             return XDP_PASS;
         }
 
@@ -228,8 +269,28 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_DROP;
         }
 
-        // 3. Redirection -> Honeypot
-        if (tcp->dest != bpf_htons(SSH_PORT) && tcp->dest != bpf_htons(HONEYPOT_PORT)) {
+        // 3. THE MIRAGE + THE PORTAL: Redirection -> Honeypot
+        // THE MIRAGE: Thay vì trả về RST (từ chối), redirect SYN đến honeypot
+        // Honeypot sẽ tự động phản hồi SYN-ACK, tạo ảo giác cổng "mở"
+        // THE PORTAL: Transparent Redirection (DNAT không trạng thái)
+        // Chuyển hướng âm thầm, không thay đổi IP đích, hacker không nhận ra
+        
+        __u8 *flags_byte = ((__u8 *)tcp + 13);
+        __u8 flags = *flags_byte;
+        __u8 syn = flags & 0x02;
+        __u8 ack = flags & 0x10;
+        
+        // CHỈ redirect SYN packets (không có ACK) - đây là inbound connection initiation
+        // Bỏ qua các Critical Assets (đã được bảo vệ bởi Phantom Protocol)
+        // Bỏ qua honeypot port (để tránh loop)
+        // Cho phép SYN+ACK, ACK, FIN, RST và các packets khác pass through
+        // Điều này đảm bảo:
+        // - Outbound connections (SYN từ server) hoạt động bình thường
+        // - Established connections (ACK, data packets) hoạt động bình thường
+        // - Chỉ redirect inbound SYN packets đến honeypot (The Mirage effect)
+        if (syn && !ack && 
+            !is_critical_asset_port(tcp->dest) && 
+            tcp->dest != bpf_htons(HONEYPOT_PORT)) {
             __u32 key = 0;
             __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
             if (val) __sync_fetch_and_add(val, 1);
@@ -237,11 +298,15 @@ int phantom_prog(struct xdp_md *ctx) {
             __be16 old_port = tcp->dest;
             __be16 new_port = bpf_htons(HONEYPOT_PORT);
             
-            update_csum(&tcp->check, old_port, new_port);
+            update_csum16(&tcp->check, old_port, new_port);
             tcp->dest = new_port;
             
             mutate_os_personality(ip, tcp);
         }
+        // Tất cả các packets khác (ACK, FIN, RST, data) sẽ pass through
+        // Điều này cho phép:
+        // - Outbound connections hoạt động bình thường
+        // - Established connections tiếp tục hoạt động sau khi SYN được redirect
     }
     return XDP_PASS;
 }

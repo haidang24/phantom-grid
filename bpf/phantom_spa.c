@@ -22,7 +22,7 @@
 
 #define SSH_PORT 22
 #define SPA_MAGIC_PORT 1337  // Port for Magic Packet (can be any port)
-#define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2024"  // Secret token (must match in Go code)
+#define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"  // Secret token (must match in Go code)
 #define SPA_TOKEN_LEN 24  // Length of secret token
 #define SPA_WHITELIST_DURATION 30  // Whitelist duration in seconds
 
