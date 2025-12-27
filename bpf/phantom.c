@@ -331,29 +331,20 @@ int phantom_prog(struct xdp_md *ctx) {
         __u8 fin = flags & 0x01;
         __u8 rst = flags & 0x04;
         
-        // Tạo connection key: (src_ip << 32) | (src_port << 16) | dest_port
-        // Điều này cho phép track và redirect TẤT CẢ packets của connection
-        // Key được tạo dựa trên original dest_port (trước khi redirect)
-        __u16 dest_port_host = bpf_ntohs(tcp->dest);
-        __u64 conn_key = ((__u64)src_ip << 32) | ((__u64)bpf_ntohs(tcp->source) << 16) | (__u64)dest_port_host;
+        // Connection Tracking cho Transparent Redirection
+        // Vấn đề: Sau khi redirect SYN từ fake port (80) → 9999, các packets tiếp theo
+        // (ACK, data) sẽ có dest_port = 9999. Cần track bằng src_ip:src_port thay vì dest_port.
+        
+        // Tạo connection key: (src_ip << 32) | (src_port << 16)
+        // Dùng src_ip:src_port để track, không dùng dest_port vì dest_port thay đổi sau redirect
+        __u64 conn_key = ((__u64)src_ip << 32) | ((__u64)bpf_ntohs(tcp->source) << 16);
         
         // Kiểm tra xem connection này đã được redirect chưa
-        // Nếu dest_port là HONEYPOT_PORT, có thể đây là packet sau khi đã redirect
-        // Cần tìm trong map với original port
-        __be16 *original_port = NULL;
+        __be16 *original_port = bpf_map_lookup_elem(&redirect_map, &conn_key);
         
-        // Thử tìm với dest_port hiện tại
-        original_port = bpf_map_lookup_elem(&redirect_map, &conn_key);
-        
-        // Nếu không tìm thấy và dest_port là HONEYPOT_PORT, có thể đây là packet
-        // từ một connection đã được redirect. Tuy nhiên, vì honeypot bind trực tiếp
-        // vào fake ports, nên các packets đến HONEYPOT_PORT không cần redirect nữa.
-        // Chỉ cần redirect các packets đến original fake port.
-        
-        // Nếu connection đã được redirect, tiếp tục redirect tất cả packets
+        // Nếu connection đã được redirect
         if (original_port) {
-            // Connection đã được track - redirect tất cả packets (SYN, ACK, data, FIN, RST)
-            // Chỉ redirect nếu dest_port vẫn là original port (chưa redirect)
+            // Nếu dest_port vẫn là original port (chưa redirect) → redirect đến 9999
             if (tcp->dest == *original_port && tcp->dest != bpf_htons(HONEYPOT_PORT)) {
                 __be16 old_port = tcp->dest;
                 __be16 new_port = bpf_htons(HONEYPOT_PORT);
@@ -361,12 +352,21 @@ int phantom_prog(struct xdp_md *ctx) {
                 update_csum16(&tcp->check, old_port, new_port);
                 tcp->dest = new_port;
             }
+            // Nếu dest_port đã là 9999 (sau redirect) → PASS trực tiếp
             
             // Cleanup map khi connection kết thúc (FIN hoặc RST từ client)
             if ((fin || rst) && !ack) {
                 bpf_map_delete_elem(&redirect_map, &conn_key);
             }
             
+            mutate_os_personality(ip, tcp);
+            return XDP_PASS;
+        }
+        
+        // Nếu dest_port là HONEYPOT_PORT và chưa được track
+        // → Có thể là packet trực tiếp đến honeypot hoặc từ connection đã được redirect
+        // → PASS để honeypot xử lý
+        if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
             mutate_os_personality(ip, tcp);
             return XDP_PASS;
         }
@@ -381,8 +381,8 @@ int phantom_prog(struct xdp_md *ctx) {
                 __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
                 if (val) __sync_fetch_and_add(val, 1);
 
-                // Lưu original port vào map TRƯỚC KHI redirect
-                // Connection key đã được tạo với original dest_port ở trên
+                // Lưu original port vào map để track connection
+                // Connection key dùng src_ip:src_port (không dùng dest_port vì sẽ thay đổi)
                 __be16 orig_port = tcp->dest;
                 bpf_map_update_elem(&redirect_map, &conn_key, &orig_port, BPF_ANY);
 
@@ -398,6 +398,7 @@ int phantom_prog(struct xdp_md *ctx) {
             }
             
             // Nếu là honeypot port (9999) → PASS (honeypot sẽ phản hồi SYN-ACK)
+            // Điều này cho phép kết nối trực tiếp đến honeypot hoặc từ connection đã redirect
             if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
                 __u32 key = 0;
                 __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
