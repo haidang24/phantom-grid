@@ -39,4 +39,8 @@ test-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
+debug:
+	chmod +x debug_connection.sh
+	./debug_connection.sh
+
 

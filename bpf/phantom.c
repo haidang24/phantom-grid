@@ -340,9 +340,28 @@ int phantom_prog(struct xdp_md *ctx) {
         __u8 fin = flags & 0x01;
         __u8 rst = flags & 0x04;
         
-        // Connection Tracking cho Transparent Redirection
-        // Vấn đề: Sau khi redirect SYN từ fake port (80) → 9999, các packets tiếp theo
-        // (ACK, data) sẽ có dest_port = 9999. Cần track bằng src_ip:src_port thay vì dest_port.
+        // QUAN TRỌNG: Tất cả packets đến HONEYPOT_PORT (9999) phải được PASS NGAY LẬP TỨC
+        // Điều này đảm bảo honeypot có thể nhận và xử lý tất cả connections
+        // Bao gồm: SYN (kết nối mới), ACK (established), data, FIN, RST
+        // Đặt check này TRƯỚC tất cả logic khác để đảm bảo packets đến 9999 luôn được PASS
+        // Đây là điều kiện QUAN TRỌNG NHẤT để honeypot hoạt động
+        if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
+            // Update statistics cho SYN packets đến honeypot
+            if (syn && !ack) {
+                __u32 key = 0;
+                __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
+                if (val) __sync_fetch_and_add(val, 1);
+            }
+            mutate_os_personality(ip, tcp);
+            return XDP_PASS; // PASS tất cả packets đến honeypot - KHÔNG CẦN TRACK
+        }
+        
+        // Connection Tracking cho Transparent Redirection (The Portal)
+        // Logic: Sau khi redirect SYN từ fake port (80) → 9999, các packets tiếp theo
+        // (ACK, data, FIN, RST) sẽ có dest_port = 9999 và đã được PASS ở trên.
+        // Tuy nhiên, cần track để xử lý các edge cases:
+        // - Packets đến original port sau khi SYN đã redirect (shouldn't happen, but handle gracefully)
+        // - Cleanup connection tracking khi connection kết thúc
         
         // Tạo connection key: (src_ip << 32) | (src_port << 16)
         // Dùng src_ip:src_port để track, không dùng dest_port vì dest_port thay đổi sau redirect
@@ -353,7 +372,8 @@ int phantom_prog(struct xdp_md *ctx) {
         
         // Nếu connection đã được redirect
         if (original_port) {
-            // Nếu dest_port vẫn là original port (chưa redirect) → redirect đến 9999
+            // Edge case: Nếu dest_port vẫn là original port (shouldn't happen after SYN redirect)
+            // Redirect đến 9999 để đảm bảo consistency
             if (tcp->dest == *original_port && tcp->dest != bpf_htons(HONEYPOT_PORT)) {
                 __be16 old_port = tcp->dest;
                 __be16 new_port = bpf_htons(HONEYPOT_PORT);
@@ -361,29 +381,18 @@ int phantom_prog(struct xdp_md *ctx) {
                 update_csum16(&tcp->check, old_port, new_port);
                 tcp->dest = new_port;
             }
-            // Nếu dest_port đã là 9999 (sau redirect) → PASS trực tiếp
+            // Nếu dest_port đã là 9999 (normal case) → đã được PASS ở trên
             
             // Cleanup map khi connection kết thúc (FIN hoặc RST từ client)
+            // Chỉ cleanup khi packet từ client (không có ACK flag hoặc có FIN/RST)
             if ((fin || rst) && !ack) {
                 bpf_map_delete_elem(&redirect_map, &conn_key);
             }
             
+            // Nếu dest_port đã là 9999, đã được PASS ở trên, không cần xử lý thêm
+            // Nếu dest_port vẫn là original port (edge case), đã redirect ở trên
             mutate_os_personality(ip, tcp);
             return XDP_PASS;
-        }
-        
-        // QUAN TRỌNG: Tất cả packets đến HONEYPOT_PORT (9999) phải được PASS
-        // Điều này đảm bảo honeypot có thể nhận và xử lý tất cả connections
-        // Bao gồm: SYN (kết nối mới), ACK (established), data, FIN, RST
-        if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
-            // Update statistics cho SYN packets đến honeypot
-            if (syn && !ack) {
-                __u32 key = 0;
-                __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
-                if (val) __sync_fetch_and_add(val, 1);
-            }
-            mutate_os_personality(ip, tcp);
-            return XDP_PASS; // PASS tất cả packets đến honeypot
         }
         
         // 4. THE MIRAGE: Xử lý SYN packets mới (inbound connection initiation)
@@ -420,12 +429,19 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_DROP;
         }
         
-        // 5. Outbound connections và established connections không được track
-        // Cho phép pass through để đảm bảo:
-        // - Outbound connections (SYN từ server) hoạt động bình thường
-        // - Established connections (ACK, data packets) hoạt động bình thường
-        // - Các packets không phải SYN từ external sẽ pass nếu không được track
+        // 5. Xử lý các packets không phải SYN (ACK, data, FIN, RST)
+        // - Nếu dest_port là 9999 → đã được PASS ở trên
+        // - Nếu connection đã được track → đã được xử lý ở connection tracking
+        // - Nếu không phải SYN và không được track → có thể là outbound hoặc established connection
+        //   → Cho phép pass để đảm bảo network connectivity
+        //   (Outbound connections từ server cần hoạt động bình thường)
     }
+    
+    // Default: PASS tất cả traffic không phải TCP/IP hoặc không match các điều kiện trên
+    // Điều này đảm bảo:
+    // - Non-IP traffic (ARP, etc.) được pass
+    // - IPv6 traffic được pass (chưa được xử lý)
+    // - Các protocols khác được pass
     return XDP_PASS;
 }
 
