@@ -102,15 +102,41 @@ func main() {
 
 	// 3. Attach XDP to Interface
 	// QUAN TRỌNG: Hãy đảm bảo tên interface (eth0, ens33, lo...) đúng với máy bạn
-	ifaceName := "ens33"
-	iface, err := net.InterfaceByName(ifaceName)
-	if err != nil {
-		// Fallback to lo if eth0 not found (for testing)
-		ifaceName = "lo"
-		iface, err = net.InterfaceByName(ifaceName)
-		if err != nil {
-			log.Fatalf("[!] Interface %s not found: %v", ifaceName, err)
+	// Tự động detect interface: ưu tiên eth0, ens33, sau đó fallback về lo
+	ifaceName := ""
+	var iface *net.Interface
+	var err error
+	
+	// Try common interface names - ưu tiên external interface trước
+	// Để "The Mirage" hoạt động, cần attach vào interface nhận traffic từ bên ngoài
+	interfaceNames := []string{"eth0", "ens33", "enp0s3", "enp0s8"}
+	var foundExternal bool
+	for _, name := range interfaceNames {
+		iface, err = net.InterfaceByName(name)
+		if err == nil {
+			// Kiểm tra xem interface có IP address không (không phải loopback)
+			addrs, _ := iface.Addrs()
+			if len(addrs) > 0 {
+				ifaceName = name
+				foundExternal = true
+				log.Printf("[*] Using network interface: %s (index: %d)", ifaceName, iface.Index)
+				break
+			}
 		}
+	}
+	
+	// Fallback to loopback nếu không tìm thấy external interface
+	if !foundExternal {
+		iface, err = net.InterfaceByName("lo")
+		if err == nil {
+			ifaceName = "lo"
+			log.Printf("[*] Using loopback interface: %s (index: %d) - for local testing only", ifaceName, iface.Index)
+			log.Printf("[!] WARNING: For production, attach to external interface (eth0, ens33, etc.)")
+		}
+	}
+	
+	if ifaceName == "" {
+		log.Fatal("[!] No suitable network interface found. Please check your network configuration.")
 	}
 
 	l, err := link.AttachXDP(link.XDPOptions{
@@ -147,6 +173,11 @@ func main() {
 
 	// 3.2 Start SPA Whitelist Manager
 	go manageSPAWhitelist(&objs)
+	
+	// Log interface info for debugging
+	logChan <- fmt.Sprintf("[SYSTEM] XDP attached to interface: %s (index: %d)", ifaceName, iface.Index)
+	logChan <- fmt.Sprintf("[SYSTEM] SPA Magic Packet port: 1337")
+	logChan <- fmt.Sprintf("[SYSTEM] SSH port 22 protected - requires SPA whitelist")
 
 	// 4. Start Internal Honeypot
 	go startHoneypot()
@@ -198,17 +229,31 @@ func attachTCEgress(iface *net.Interface, objs *EgressObjects) error {
 	return nil
 }
 
-// manageSPAWhitelist periodically cleans up expired SPA whitelist entries
+// manageSPAWhitelist periodically checks SPA statistics and logs changes
 func manageSPAWhitelist(objs *PhantomObjects) {
-	ticker := time.NewTicker(5 * time.Second)
-	const whitelistDuration = 30 * time.Second
-
+	ticker := time.NewTicker(2 * time.Second)
+	var lastSuccessCount uint64 = 0
+	var lastFailedCount uint64 = 0
+	
 	for range ticker.C {
-		// Iterate through whitelist and remove expired entries
-		// Note: LRU map will auto-evict, but we can also manually check expiry
-		// For simplicity, we rely on LRU eviction when map is full
-		// In production, you could add timestamp checking here
-		_ = objs // Use objs to avoid unused variable warning
+		// Check SPA auth success counter
+		var key uint32 = 0
+		var successVal uint64
+		if err := objs.SpaAuthSuccess.Lookup(key, &successVal); err == nil {
+			if successVal > lastSuccessCount {
+				logChan <- fmt.Sprintf("[SPA] ✅ Successful authentication! (Total: %d)", successVal)
+				lastSuccessCount = successVal
+			}
+		}
+		
+		// Check SPA auth failed counter
+		var failedVal uint64
+		if err := objs.SpaAuthFailed.Lookup(key, &failedVal); err == nil {
+			if failedVal > lastFailedCount {
+				logChan <- fmt.Sprintf("[SPA] ❌ Failed authentication attempt (Total: %d)", failedVal)
+				lastFailedCount = failedVal
+			}
+		}
 	}
 }
 
@@ -512,24 +557,83 @@ func startDashboard(iface string, objs *PhantomObjects, egressObjs *EgressObject
 	}
 }
 
-// --- HONEYPOT LOGIC ---
-func startHoneypot() {
-	ln, err := net.Listen("tcp", ":9999")
-	if err != nil {
-		logChan <- fmt.Sprintf("[ERROR] Failed to start honeypot: %v", err)
-		return
-	}
-	logChan <- "[SYSTEM] Honeypot listening on port 9999"
-	defer ln.Close()
+// Fake Ports - "The Mirage": Các port giả mà honeypot sẽ bind
+// Khi quét từ bên ngoài, nmap sẽ thấy các port này "mở"
+var fakePorts = []int{
+	80,    // HTTP
+	443,   // HTTPS
+	3306,  // MySQL
+	5432,  // PostgreSQL
+	6379,  // Redis
+	27017, // MongoDB
+	8080,  // Admin Panel
+	8443,  // HTTPS Alt
+	9000,  // Admin Panel
+	21,    // FTP
+	23,    // Telnet
+	3389,  // RDP
+	5900,  // VNC
+	1433,  // MSSQL
+	1521,  // Oracle
+	5433,  // PostgreSQL Alt
+	11211, // Memcached
+	27018, // MongoDB Shard
+	9200,  // Elasticsearch
+	5601,  // Kibana
+	3000,  // Node.js
+	5000,  // Flask
+	8000,  // Django
+	8888,  // Jupyter
+	9999,  // Honeypot (fallback)
+}
 
-	for {
-		conn, err := ln.Accept()
+// --- HONEYPOT LOGIC ---
+// "The Mirage": Bind nhiều port giả để tạo "Ghost Grid"
+// Khi quét từ bên ngoài, nmap sẽ thấy nhiều port "mở" thay vì chỉ thấy port 9999
+func startHoneypot() {
+	var listeners []net.Listener
+	var wg sync.WaitGroup
+
+	// Bind tất cả các port giả
+	for _, port := range fakePorts {
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
-			logChan <- fmt.Sprintf("[ERROR] Honeypot accept error: %v", err)
+			// Port có thể đã được sử dụng, skip
 			continue
 		}
-		go handleConnection(conn)
+		listeners = append(listeners, ln)
+		logChan <- fmt.Sprintf("[SYSTEM] Honeypot listening on port %d", port)
+
+		wg.Add(1)
+		go func(l net.Listener, p int) {
+			defer wg.Done()
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port %d: %v", p, err)
+					continue
+				}
+				// Lưu port gốc vào connection context để honeypot biết port nào đang được connect
+				go handleConnection(conn, p)
+			}
+		}(ln, port)
 	}
+
+	if len(listeners) == 0 {
+		logChan <- "[ERROR] Failed to bind any fake ports"
+		return
+	}
+
+	logChan <- fmt.Sprintf("[SYSTEM] Honeypot bound to %d fake ports (The Mirage active)", len(listeners))
+	
+	// Cleanup on exit
+	defer func() {
+		for _, ln := range listeners {
+			ln.Close()
+		}
+	}()
+
+	wg.Wait()
 }
 
 func getRandomBanner(serviceType string) string {
@@ -555,7 +659,35 @@ func selectRandomService() string {
 	return serviceTypes[rand.Intn(len(serviceTypes))]
 }
 
-func handleConnection(conn net.Conn) {
+// selectServiceByPort: Chọn service type dựa trên port để tạo ảo giác thực tế hơn
+// "The Mirage": Mỗi port sẽ có service type phù hợp, tạo "Ghost Grid" chân thực
+func selectServiceByPort(port int) string {
+	switch port {
+	case 80, 443, 8080, 8443, 8000, 8888:
+		return "http"
+	case 3306, 5432, 1433, 1521:
+		return "mysql"
+	case 6379, 11211:
+		return "redis"
+	case 27017, 27018:
+		return "mysql" // MongoDB handshake tương tự MySQL
+	case 21:
+		return "ftp"
+	case 23:
+		return "telnet"
+	case 3389, 5900:
+		return "ssh" // RDP/VNC giả lập như SSH
+	case 9200, 5601:
+		return "http" // Elasticsearch/Kibana giả lập như HTTP
+	case 3000, 5000:
+		return "http" // Node.js/Flask giả lập như HTTP
+	default:
+		// Random cho các port khác
+		return selectRandomService()
+	}
+}
+
+func handleConnection(conn net.Conn, originalPort int) {
 	defer conn.Close()
 	remoteAddr := conn.RemoteAddr()
 	if remoteAddr == nil {
@@ -566,11 +698,12 @@ func handleConnection(conn net.Conn) {
 	ip := strings.Split(remote, ":")[0]
 	t := time.Now().Format("15:04:05")
 
-	serviceType := selectRandomService()
+	// Chọn service type dựa trên port (để tạo ảo giác thực tế hơn)
+	serviceType := selectServiceByPort(originalPort)
 	banner := getRandomBanner(serviceType)
 
-	logChan <- fmt.Sprintf("[%s] TRAP HIT! IP: %s | Service: %s", t, ip, strings.ToUpper(serviceType))
-	logAttack(ip, "TRAP_HIT")
+	logChan <- fmt.Sprintf("[%s] TRAP HIT! IP: %s | Port: %d | Service: %s", t, ip, originalPort, strings.ToUpper(serviceType))
+	logAttack(ip, fmt.Sprintf("TRAP_HIT_PORT_%d", originalPort))
 
 	if _, err := conn.Write([]byte(banner)); err != nil {
 		logChan <- fmt.Sprintf("[%s] Error sending banner to %s: %v", t, ip, err)

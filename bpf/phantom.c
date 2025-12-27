@@ -17,7 +17,7 @@
 #define SSH_PORT 22
 #define SPA_MAGIC_PORT 1337
 #define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
-#define SPA_TOKEN_LEN 24
+#define SPA_TOKEN_LEN 21  // Length of "PHANTOM_GRID_SPA_2025" (without null terminator)
 
 // Critical Assets Ports - Protected by Phantom Protocol (Default: DROP all traffic)
 // These ports are completely invisible to attackers unless whitelisted via SPA
@@ -156,16 +156,48 @@ static __always_inline int is_critical_asset_port(__be16 port) {
             p == ADMIN_PANEL_PORT_3);
 }
 
+// Helper: Check if port is a Fake Port (The Mirage - honeypot will bind these ports)
+// Danh sách này phải khớp với fakePorts trong cmd/agent/main.go
+static __always_inline int is_fake_port(__be16 port) {
+    __u16 p = bpf_ntohs(port);
+    return (p == 80 ||      // HTTP
+            p == 443 ||     // HTTPS
+            p == 3306 ||    // MySQL (fake)
+            p == 5432 ||    // PostgreSQL (fake)
+            p == 6379 ||    // Redis (fake)
+            p == 27017 ||   // MongoDB (fake)
+            p == 8080 ||    // Admin Panel (fake)
+            p == 8443 ||    // HTTPS Alt (fake)
+            p == 9000 ||    // Admin Panel (fake)
+            p == 21 ||      // FTP (fake)
+            p == 23 ||      // Telnet (fake)
+            p == 3389 ||    // RDP (fake)
+            p == 5900 ||    // VNC (fake)
+            p == 1433 ||    // MSSQL (fake)
+            p == 1521 ||    // Oracle (fake)
+            p == 5433 ||    // PostgreSQL Alt (fake)
+            p == 11211 ||   // Memcached (fake)
+            p == 27018 ||   // MongoDB Shard (fake)
+            p == 9200 ||    // Elasticsearch (fake)
+            p == 5601 ||    // Kibana (fake)
+            p == 3000 ||    // Node.js (fake)
+            p == 5000 ||    // Flask (fake)
+            p == 8000 ||    // Django (fake)
+            p == 8888 ||    // Jupyter (fake)
+            p == 9999);     // Honeypot (fallback)
+}
+
 // FIX: Verify function now takes data_end and checks pointers directly
 static __always_inline int verify_magic_packet(void *payload, void *data_end) {
     // Quan trọng: Kiểm tra con trỏ kết thúc trước khi truy cập bất kỳ byte nào
     if ((void *)payload + SPA_TOKEN_LEN > data_end) return 0;
 
-    char token[SPA_TOKEN_LEN] = SPA_SECRET_TOKEN;
+    // Token string literal - so sánh trực tiếp với payload
+    const char *token = SPA_SECRET_TOKEN;
     unsigned char *p = (unsigned char *)payload;
     const unsigned char *t = (const unsigned char *)token;
     
-    // Vòng lặp so sánh từng byte
+    // So sánh từng byte - chỉ so sánh đúng 21 bytes (không bao gồm null terminator)
     #pragma clang loop unroll(full)
     for (int i = 0; i < SPA_TOKEN_LEN; i++) {
         if (p[i] != t[i]) return 0;
@@ -174,8 +206,12 @@ static __always_inline int verify_magic_packet(void *payload, void *data_end) {
 }
 
 static __always_inline void spa_whitelist_ip(__be32 src_ip) {
+    // Add IP to whitelist (LRU map will auto-evict when full)
+    // Value is not used for expiry checking in this simple implementation
     __u64 expiry = 0;
     bpf_map_update_elem(&spa_whitelist, &src_ip, &expiry, BPF_ANY);
+    
+    // Update success statistics
     __u32 key = 0;
     __u64 *val = bpf_map_lookup_elem(&spa_auth_success, &key);
     if (val) __sync_fetch_and_add(val, 1);
@@ -269,44 +305,42 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_DROP;
         }
 
-        // 3. THE MIRAGE + THE PORTAL: Redirection -> Honeypot
-        // THE MIRAGE: Thay vì trả về RST (từ chối), redirect SYN đến honeypot
-        // Honeypot sẽ tự động phản hồi SYN-ACK, tạo ảo giác cổng "mở"
-        // THE PORTAL: Transparent Redirection (DNAT không trạng thái)
-        // Chuyển hướng âm thầm, không thay đổi IP đích, hacker không nhận ra
+        // 3. THE MIRAGE: Pass Fake Ports, Drop Real Ports
+        // THE MIRAGE: Honeypot đã bind nhiều port giả (80, 443, 3306, etc.)
+        // Khi quét từ bên ngoài, nmap sẽ thấy các port này "mở" (honeypot phản hồi SYN-ACK)
+        // Các port thật (không phải fake ports, không phải critical assets) sẽ bị DROP
+        // Kết quả: Hacker chỉ thấy các port giả, không thấy các port thật
         
         __u8 *flags_byte = ((__u8 *)tcp + 13);
         __u8 flags = *flags_byte;
         __u8 syn = flags & 0x02;
         __u8 ack = flags & 0x10;
         
-        // CHỈ redirect SYN packets (không có ACK) - đây là inbound connection initiation
-        // Bỏ qua các Critical Assets (đã được bảo vệ bởi Phantom Protocol)
-        // Bỏ qua honeypot port (để tránh loop)
+        // CHỈ xử lý SYN packets (không có ACK) - đây là inbound connection initiation
         // Cho phép SYN+ACK, ACK, FIN, RST và các packets khác pass through
         // Điều này đảm bảo:
         // - Outbound connections (SYN từ server) hoạt động bình thường
         // - Established connections (ACK, data packets) hoạt động bình thường
-        // - Chỉ redirect inbound SYN packets đến honeypot (The Mirage effect)
-        if (syn && !ack && 
-            !is_critical_asset_port(tcp->dest) && 
-            tcp->dest != bpf_htons(HONEYPOT_PORT)) {
-            __u32 key = 0;
-            __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
-            if (val) __sync_fetch_and_add(val, 1);
-
-            __be16 old_port = tcp->dest;
-            __be16 new_port = bpf_htons(HONEYPOT_PORT);
+        if (syn && !ack) {
+            // Nếu là fake port → PASS (honeypot đã bind, sẽ nhận connection và phản hồi SYN-ACK)
+            if (is_fake_port(tcp->dest)) {
+                __u32 key = 0;
+                __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
+                if (val) __sync_fetch_and_add(val, 1);
+                
+                mutate_os_personality(ip, tcp);
+                return XDP_PASS; // Honeypot sẽ phản hồi SYN-ACK, tạo ảo giác port "mở"
+            }
             
-            update_csum16(&tcp->check, old_port, new_port);
-            tcp->dest = new_port;
-            
-            mutate_os_personality(ip, tcp);
+            // Nếu không phải fake port và không phải critical asset → DROP (ẩn port)
+            // Điều này đảm bảo hacker chỉ thấy các port giả, không thấy các port thật
+            return XDP_DROP;
         }
+        
         // Tất cả các packets khác (ACK, FIN, RST, data) sẽ pass through
         // Điều này cho phép:
         // - Outbound connections hoạt động bình thường
-        // - Established connections tiếp tục hoạt động sau khi SYN được redirect
+        // - Established connections tiếp tục hoạt động sau khi SYN được xử lý
     }
     return XDP_PASS;
 }

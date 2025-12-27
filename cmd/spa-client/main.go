@@ -33,12 +33,18 @@ func main() {
 	}
 	defer conn.Close()
 
-	// Send Magic Packet with secret token
-	_, err = conn.Write([]byte(SPA_SECRET_TOKEN))
+	// Send Magic Packet with secret token (exactly 21 bytes, no null terminator)
+	tokenBytes := []byte(SPA_SECRET_TOKEN)
+	if len(tokenBytes) != 21 {
+		fmt.Printf("[!] Error: Token length mismatch (expected 21, got %d)\n", len(tokenBytes))
+		os.Exit(1)
+	}
+	_, err = conn.Write(tokenBytes)
 	if err != nil {
 		fmt.Printf("[!] Failed to send Magic Packet: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("[*] Sent %d bytes: %s\n", len(tokenBytes), SPA_SECRET_TOKEN)
 
 	fmt.Println("[+] Magic Packet sent successfully!")
 	fmt.Println("[+] Your IP has been whitelisted for 30 seconds")
