@@ -840,7 +840,10 @@ func startHoneypot() {
 		wg.Add(1)
 		go func(l net.Listener) {
 			defer wg.Done()
+			logChan <- "[DEBUG] Honeypot Accept() loop started for port 9999"
 			for {
+				// Accept() will block until a connection is established (3-way handshake complete)
+				// If client doesn't send ACK, Accept() will not return
 				conn, err := l.Accept()
 				if err != nil {
 					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port 9999: %v", err)
@@ -849,7 +852,7 @@ func startHoneypot() {
 				// Debug: Log when connection is accepted on fallback port
 				remoteAddr := conn.RemoteAddr()
 				if remoteAddr != nil {
-					logChan <- fmt.Sprintf("[DEBUG] Honeypot accepted connection on port 9999 (fallback) from %s", remoteAddr.String())
+					logChan <- fmt.Sprintf("[DEBUG] ✅ Honeypot accepted connection on port 9999 (fallback) from %s", remoteAddr.String())
 				}
 				// XDP đã redirect từ fake port đến 9999
 				go handleConnection(conn, 9999)

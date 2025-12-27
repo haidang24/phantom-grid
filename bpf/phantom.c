@@ -312,16 +312,9 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_PASS; // IP đã whitelisted
         }
 
-        // 2. Chặn Stealth Scans
-        if (is_stealth_scan(tcp)) {
-            __u32 key = 0;
-            __u64 *val = bpf_map_lookup_elem(&stealth_drops, &key);
-            if (val) __sync_fetch_and_add(val, 1);
-            return XDP_DROP;
-        }
-
-        // 3. QUAN TRỌNG: PASS tất cả packets đến HONEYPOT_PORT (9999)
+        // 2. QUAN TRỌNG: PASS tất cả packets đến HONEYPOT_PORT (9999) TRƯỚC khi check stealth scan
         // Đảm bảo honeypot nhận được tất cả connections (SYN, ACK, data, FIN, RST)
+        // LƯU Ý: Phải check port 9999 TRƯỚC stealth scan để tránh DROP ACK packets trong handshake
         // LƯU Ý: Không mutate OS personality cho packets đến port 9999
         // vì có thể gây checksum issues và làm packets bị drop
         // QUAN TRỌNG: Không modify packets đến port 9999 để tránh checksum issues
@@ -329,6 +322,16 @@ int phantom_prog(struct xdp_md *ctx) {
             // Không mutate, không modify - chỉ PASS
             // Kernel sẽ tự động recalculate checksum nếu cần
             return XDP_PASS;
+        }
+
+        // 3. Chặn Stealth Scans (sau khi đã check port 9999)
+        // LƯU Ý: ACK packets đến port 9999 đã được PASS ở trên
+        // Chỉ chặn stealth scans đến các port khác
+        if (is_stealth_scan(tcp)) {
+            __u32 key = 0;
+            __u64 *val = bpf_map_lookup_elem(&stealth_drops, &key);
+            if (val) __sync_fetch_and_add(val, 1);
+            return XDP_DROP;
         }
 
         // 4. Redirect TẤT CẢ ports khác (trừ SSH và 9999) đến honeypot
