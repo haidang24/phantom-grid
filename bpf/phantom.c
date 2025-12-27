@@ -8,19 +8,18 @@
 #include <linux/udp.h>
 #include <linux/in.h>
 
-/* * PHANTOM GRID - eBPF KERNEL MODULE
- * Author: Mai Hai Dang (HD24 Security Lab)
- * Description: XDP Layer for Transparent Redirection & Stealth Trapping
+/*
+ * PHANTOM GRID - eBPF KERNEL MODULE
+ * XDP Layer for Transparent Redirection & Stealth Trapping
  */
 
 #define HONEYPOT_PORT 9999
 #define SSH_PORT 22
 #define SPA_MAGIC_PORT 1337
 #define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
-#define SPA_TOKEN_LEN 21  // Length of "PHANTOM_GRID_SPA_2025" (without null terminator)
+#define SPA_TOKEN_LEN 21
 
-// Critical Assets Ports - Protected by Phantom Protocol (Default: DROP all traffic)
-// These ports are completely invisible to attackers unless whitelisted via SPA
+// Critical asset ports protected by Phantom Protocol (default: DROP all traffic)
 #define MYSQL_PORT 3306
 #define POSTGRES_PORT 5432
 #define MONGODB_PORT 27017
@@ -92,19 +91,15 @@ struct {
     __type(value, __u64);
 } spa_auth_failed SEC(".maps");
 
-// Connection Tracking Map for Transparent Redirection (The Portal)
-// Key: 64-bit = (src_ip << 32) | (src_port << 16) | dest_port
-// Value: Original destination port (before redirect to honeypot)
-// This allows us to redirect ALL packets of a connection, not just SYN
+// Connection tracking map for transparent redirection
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __uint(max_entries, 10000);  // Track up to 10k concurrent connections
+    __uint(max_entries, 10000);
     __type(key, __u64);
     __type(value, __be16);
 } redirect_map SEC(".maps");
 
-// HELPER: Manual Checksum Update for 16-bit values (ports, windows)
-// Checksum is calculated in network byte order, so we work directly with __be16
+// Manual checksum update for 16-bit values
 static __always_inline void update_csum16(__u16 *csum, __be16 old_val, __be16 new_val) {
     __u32 sum = (~(*csum) & 0xffff);
     // Convert to host byte order for arithmetic, then back
@@ -135,14 +130,12 @@ static __always_inline void mutate_os_personality(struct iphdr *ip, struct tcphd
     
     if (old_ttl != new_ttl) {
         ip->ttl = new_ttl;
-        // Với XDP Generic mode, set checksum = 0 để kernel tự tính lại
-        ip->check = 0;
+        ip->check = 0; // Kernel will recalculate checksum
     }
     
     if (old_window != new_window) {
         tcp->window = new_window;
-        // Với XDP Generic mode, set checksum = 0 để kernel tự tính lại
-        tcp->check = 0;
+        tcp->check = 0; // Kernel will recalculate checksum
     }
     
     __u32 key = 0;
@@ -168,12 +161,10 @@ static __always_inline int is_critical_asset_port(__be16 port) {
             p == ADMIN_PANEL_PORT_3);
 }
 
-// Helper: Check if port is a Fake Port (The Mirage - honeypot will bind these ports)
-// Danh sách này phải khớp với fakePorts trong cmd/agent/main.go
-// LƯU Ý: 9999 là HONEYPOT_PORT (fallback), KHÔNG phải fake port
+// Check if port is a fake port (The Mirage - honeypot will bind these ports)
+// This list must match fakePorts in cmd/agent/main.go
 static __always_inline int is_fake_port(__be16 port) {
     __u16 p = bpf_ntohs(port);
-    // Nếu là honeypot port, không phải fake port
     if (p == HONEYPOT_PORT) return 0;
     
     return (p == 80 ||      // HTTP
@@ -202,17 +193,14 @@ static __always_inline int is_fake_port(__be16 port) {
             p == 8888);     // Jupyter (fake)
 }
 
-// FIX: Verify function now takes data_end and checks pointers directly
+// Verify magic packet token
 static __always_inline int verify_magic_packet(void *payload, void *data_end) {
-    // Quan trọng: Kiểm tra con trỏ kết thúc trước khi truy cập bất kỳ byte nào
     if ((void *)payload + SPA_TOKEN_LEN > data_end) return 0;
 
-    // Token string literal - so sánh trực tiếp với payload
     const char *token = SPA_SECRET_TOKEN;
     unsigned char *p = (unsigned char *)payload;
     const unsigned char *t = (const unsigned char *)token;
     
-    // So sánh từng byte - chỉ so sánh đúng 21 bytes (không bao gồm null terminator)
     #pragma clang loop unroll(full)
     for (int i = 0; i < SPA_TOKEN_LEN; i++) {
         if (p[i] != t[i]) return 0;
@@ -221,19 +209,15 @@ static __always_inline int verify_magic_packet(void *payload, void *data_end) {
 }
 
 static __always_inline void spa_whitelist_ip(__be32 src_ip) {
-    // Add IP to whitelist (LRU map will auto-evict when full)
-    // Value is not used for expiry checking in this simple implementation
     __u64 expiry = 0;
     bpf_map_update_elem(&spa_whitelist, &src_ip, &expiry, BPF_ANY);
     
-    // Update success statistics
     __u32 key = 0;
     __u64 *val = bpf_map_lookup_elem(&spa_auth_success, &key);
     if (val) __sync_fetch_and_add(val, 1);
 }
 
 static __always_inline int is_stealth_scan(struct tcphdr *tcp) {
-    // tcp pointer already bounds checked in main prog
     __u8 *flags_byte = ((__u8 *)tcp + 13);
     __u8 flags = *flags_byte;
     
@@ -244,10 +228,10 @@ static __always_inline int is_stealth_scan(struct tcphdr *tcp) {
     __u8 ack = flags & 0x10;
     __u8 urg = flags & 0x20;
     
-    if (fin && urg && psh && !syn && !rst) return 1; // Xmas
-    if (flags == 0) return 1; // Null
-    if (fin && !syn && !rst && !psh && !ack && !urg) return 1; // FIN
-    if (ack && !syn && !fin && !rst) return 1; // ACK
+    if (fin && urg && psh && !syn && !rst) return 1; // Xmas scan
+    if (flags == 0) return 1; // Null scan
+    if (fin && !syn && !rst && !psh && !ack && !urg) return 1; // FIN scan
+    if (ack && !syn && !fin && !rst) return 1; // ACK scan
     return 0;
 }
 
@@ -266,90 +250,59 @@ int phantom_prog(struct xdp_md *ctx) {
 
     __be32 src_ip = ip->saddr;
 
-    // --- ICMP Logic: Cho phép tất cả ICMP traffic (ping, etc.) ---
-    // ICMP cần được PASS để đảm bảo network connectivity và troubleshooting
+    // Allow all ICMP traffic (ping, etc.)
     if (ip->protocol == IPPROTO_ICMP) {
         return XDP_PASS;
     }
 
-    // --- SPA Logic (UDP) ---
+    // SPA Logic (UDP)
     if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = (void *)(ip + 1);
-        // Kiểm tra header UDP (8 bytes)
         if ((void *)(udp + 1) > data_end) return XDP_PASS;
         
-        // CHỈ xử lý SPA Magic Packet, cho phép tất cả UDP traffic khác đi qua
-        // (DNS, DHCP, NTP, etc. cần hoạt động bình thường)
         if (udp->dest == bpf_htons(SPA_MAGIC_PORT)) {
             void *payload = (void *)(udp + 1);
             
-            // Gọi hàm verify với data_end để kiểm tra biên bên trong
             if (verify_magic_packet(payload, data_end)) {
                 spa_whitelist_ip(src_ip);
-                return XDP_DROP; // Drop Magic Packet sau khi xử lý
+                return XDP_DROP;
             } else {
                 __u32 key = 0;
                 __u64 *val = bpf_map_lookup_elem(&spa_auth_failed, &key);
                 if (val) __sync_fetch_and_add(val, 1);
-                return XDP_DROP; // Drop invalid Magic Packets
+                return XDP_DROP;
             }
         }
-        // Cho phép tất cả UDP traffic khác đi qua (DNS, DHCP, etc.)
         return XDP_PASS;
     }
 
-    // --- TCP Logic (Defense & Redirection) ---
+    // TCP Logic (Defense & Redirection)
     if (ip->protocol == IPPROTO_TCP) {
         struct tcphdr *tcp = (void *)(ip + 1);
-        // Kiểm tra header TCP (20 bytes)
         if ((void *)(tcp + 1) > data_end) return XDP_PASS;
 
-        // 1. Bảo vệ SSH (Critical Asset) - Chỉ cho phép nếu whitelisted qua SPA
+        // Protect SSH port - only allow if whitelisted via SPA
         if (tcp->dest == bpf_htons(SSH_PORT)) {
             if (!is_spa_whitelisted(src_ip)) {
-                return XDP_DROP; // Server "chết" dưới góc nhìn hacker
+                return XDP_DROP;
             }
-            return XDP_PASS; // IP đã whitelisted
-        }
-
-        // 2. QUAN TRỌNG: PASS tất cả packets đến HONEYPOT_PORT (9999) TRƯỚC khi check stealth scan
-        // Đảm bảo honeypot nhận được tất cả connections (SYN, ACK, data, FIN, RST)
-        // LƯU Ý: Phải check port 9999 TRƯỚC stealth scan để tránh DROP ACK packets trong handshake
-        // LƯU Ý: Không mutate OS personality cho packets đến port 9999
-        // vì có thể gây checksum issues và làm packets bị drop
-        // QUAN TRỌNG: Không modify packets đến port 9999 để tránh checksum issues
-        if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
-            // Không mutate, không modify - chỉ PASS
-            // Kernel sẽ tự động recalculate checksum nếu cần
             return XDP_PASS;
         }
 
-        // 3. PASS Fake Ports trực tiếp (The Mirage) - để các port này hiện ra riêng biệt khi quét
-        // Fake ports sẽ được honeypot bind trực tiếp
-        // Nếu honeypot bind được → port hiện "open" với port gốc (80, 443, 3306, etc.)
-        // Nếu honeypot không bind được (port < 1024 cần sudo) → kernel gửi RST → port hiện "closed"
-        // LƯU Ý: Để tất cả fake ports hiện "open", cần chạy với sudo để bind ports < 1024
-        // QUAN TRỌNG: Không mutate OS personality cho fake ports để tránh checksum issues
-        // Tương tự như port 9999, chỉ PASS trực tiếp
+        // Pass all packets to honeypot port (before stealth scan check)
+        if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
+            return XDP_PASS;
+        }
+
+        // Pass fake ports directly (The Mirage)
         if (is_fake_port(tcp->dest)) {
-            // Update statistics
             __u32 key = 0;
             __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
             if (val) __sync_fetch_and_add(val, 1);
-            
-            // PASS packet trực tiếp đến fake port (không redirect, không mutate)
-            // Honeypot sẽ bind và respond trên port gốc
-            // Không mutate OS personality để tránh checksum issues và packets bị drop
-            // Nếu honeypot không bind được, kernel sẽ gửi RST
-            
-            // PASS - honeypot sẽ respond trên port gốc
-            // Nmap sẽ thấy port gốc (80, 443, 3306, etc.) là "open"
             return XDP_PASS;
         }
 
-        // 4. Chặn Stealth Scans (sau khi đã check port 9999 và fake ports)
-        // LƯU Ý: ACK packets đến port 9999 và fake ports đã được PASS ở trên
-        // Chỉ chặn stealth scans đến các port khác
+        // Block stealth scans
         if (is_stealth_scan(tcp)) {
             __u32 key = 0;
             __u64 *val = bpf_map_lookup_elem(&stealth_drops, &key);
@@ -357,30 +310,22 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_DROP;
         }
 
-        // 5. Redirect các ports khác (không phải SSH, 9999, fake ports) đến honeypot fallback
-        // Đây là các ports không được định nghĩa là fake ports
-        // Redirect đến 9999 để honeypot xử lý
+        // Redirect other ports to honeypot fallback
         __u32 key = 0;
         __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
         if (val) __sync_fetch_and_add(val, 1);
 
-        // Redirect port: old_port → 9999
         __be16 old_port = tcp->dest;
         __be16 new_port = bpf_htons(HONEYPOT_PORT);
         
-        // Với XDP Generic mode, set checksum = 0 để kernel tự tính lại
         tcp->dest = new_port;
-        tcp->check = 0; // Kernel sẽ tự tính lại checksum
+        tcp->check = 0; // Kernel will recalculate checksum
         
-        // Mutate OS personality để confuse fingerprinting
         mutate_os_personality(ip, tcp);
         
-        // QUAN TRỌNG: Return XDP_PASS ngay sau khi redirect
-        // Packet bây giờ có dest_port = 9999, sẽ được kernel forward đến honeypot
         return XDP_PASS;
     }
     
-    // Default: PASS tất cả traffic không phải TCP
     return XDP_PASS;
 }
 

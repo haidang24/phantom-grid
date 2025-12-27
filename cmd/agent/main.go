@@ -71,8 +71,7 @@ var (
 		"Debian GNU/Linux 10\r\n\r\nlocalhost login: ",
 	}
 
-	// Service type probabilities (for randomization) - The Mirage effect
-	// Mỗi kết nối sẽ nhận được một dịch vụ ngẫu nhiên, tạo "Ghost Grid"
+	// Service types for randomization (The Mirage effect)
 	serviceTypes = []string{"ssh", "http", "mysql", "redis", "ftp", "telnet"}
 )
 
@@ -110,7 +109,6 @@ func main() {
 	var iface *net.Interface
 	var err error
 
-	// List tất cả interfaces để debug
 	allInterfaces, _ := net.Interfaces()
 	log.Printf("[DEBUG] Available interfaces:")
 	for _, iface := range allInterfaces {
@@ -122,7 +120,6 @@ func main() {
 		}
 	}
 
-	// Nếu user chỉ định interface từ command line, sử dụng nó
 	if *interfaceFlag != "" {
 		iface, err = net.InterfaceByName(*interfaceFlag)
 		if err != nil {
@@ -135,16 +132,12 @@ func main() {
 			log.Printf("[*]   IP: %s", addr.String())
 		}
 	} else {
-		// Auto-detect interface (logic cũ)
 		log.Printf("[*] No interface specified, auto-detecting...")
 
-		// Try common interface names - ưu tiên external interface trước
-		// Để "The Mirage" hoạt động, cần attach vào interface nhận traffic từ bên ngoài
-		// Ưu tiên WiFi interface (wlx*), sau đó ens33 (VMware), rồi các interface khác
 		interfaceNames := []string{"wlx00127b2163a6", "wlan0", "ens33", "eth0", "enp0s3", "enp0s8", "enp0s9", "eth1"}
 		var foundExternal bool
 
-		// First, try to find WiFi interface by pattern (wlx*, wlan*, wlp*)
+		// Try to find WiFi interface by pattern
 		wifiInterfaces, _ := net.Interfaces()
 		for _, candidateIface := range wifiInterfaces {
 			if strings.HasPrefix(candidateIface.Name, "wlx") ||
@@ -154,7 +147,6 @@ func main() {
 				if len(addrs) > 0 {
 					isLoopback := (candidateIface.Flags & net.FlagLoopback) != 0
 					if !isLoopback {
-						// Create a copy to avoid pointer issues
 						ifaceCopy := candidateIface
 						iface = &ifaceCopy
 						ifaceName = candidateIface.Name
@@ -169,21 +161,17 @@ func main() {
 			}
 		}
 
-		// If WiFi not found, try exact interface names
 		if !foundExternal {
 			for _, name := range interfaceNames {
 				iface, err = net.InterfaceByName(name)
 				if err == nil {
-					// Kiểm tra xem interface có IP address không (không phải loopback)
 					addrs, _ := iface.Addrs()
 					if len(addrs) > 0 {
-						// Kiểm tra xem có phải loopback không
 						isLoopback := (iface.Flags & net.FlagLoopback) != 0
 						if !isLoopback {
 							ifaceName = name
 							foundExternal = true
 							log.Printf("[*] Using network interface: %s (index: %d)", ifaceName, iface.Index)
-							// Log IP addresses
 							for _, addr := range addrs {
 								log.Printf("[*]   IP: %s", addr.String())
 							}
@@ -200,7 +188,6 @@ func main() {
 			}
 		}
 
-		// Fallback to loopback nếu không tìm thấy external interface
 		if !foundExternal {
 			iface, err = net.InterfaceByName("lo")
 			if err == nil {
@@ -217,13 +204,11 @@ func main() {
 	}
 
 	// Attach XDP to detected interface
-	// CHỈ attach vào interface chính để tránh conflict và treo máy
-	// Sử dụng XDPGenericMode để tương thích tốt hơn với VMware và các virtual interfaces
-	// Generic mode chạy trong kernel network stack, tương thích tốt hơn Native mode
+	// Use XDPGenericMode for better compatibility with VMware and virtual interfaces
 	l, err := link.AttachXDP(link.XDPOptions{
 		Program:   objs.PhantomProg,
 		Interface: iface.Index,
-		Flags:     link.XDPGenericMode, // QUAN TRỌNG: Generic mode cho VMware compatibility
+		Flags:     link.XDPGenericMode,
 	})
 	if err != nil {
 		log.Fatal("[!] Failed to attach XDP:", err)
@@ -232,10 +217,7 @@ func main() {
 
 	log.Printf("[*] XDP attached to interface: %s (index: %d)", ifaceName, iface.Index)
 
-	// 3.1 Load and attach TC Egress Program (DLP) using netlink
-	// Note: TC Egress requires specific netlink APIs that may not be available on all systems
-	// If compilation fails with netlink.QdiscAdd/FilterAdd errors, TC Egress DLP will be disabled
-	// The main XDP-based protection (Phantom Protocol, The Mirage, The Portal) will still work
+	// 3.1 Load and attach TC Egress Program (DLP)
 	var egressObjs EgressObjects
 	var egressObjsPtr *EgressObjects
 
@@ -243,14 +225,12 @@ func main() {
 		log.Printf("[!] Warning: Failed to load TC egress objects: %v", err)
 		log.Printf("[!] TC Egress DLP will be disabled. Main XDP protection still active.")
 	} else {
-		// Setup TC Egress using netlink
 		if err := attachTCEgress(iface, &egressObjs); err != nil {
 			log.Printf("[!] Warning: Failed to attach TC egress: %v", err)
 			log.Printf("[!] TC Egress DLP will be disabled. Main XDP protection still active.")
 			egressObjs.Close()
 			egressObjsPtr = nil
 		} else {
-			// Success
 			egressObjsPtr = &egressObjs
 			logChan <- "[SYSTEM] TC Egress Hook attached (DLP Active)"
 
@@ -263,18 +243,15 @@ func main() {
 	// 3.2 Start SPA Whitelist Manager
 	go manageSPAWhitelist(&objs)
 
-	// Log interface info for debugging
 	logChan <- fmt.Sprintf("[SYSTEM] XDP attached to interface: %s (index: %d)", ifaceName, iface.Index)
 	logChan <- fmt.Sprintf("[SYSTEM] SPA Magic Packet port: 1337")
 	logChan <- fmt.Sprintf("[SYSTEM] SSH port 22 protected - requires SPA whitelist")
 
-	// Debug: Log interface IP addresses
 	addrs, _ := iface.Addrs()
 	for _, addr := range addrs {
 		logChan <- fmt.Sprintf("[DEBUG] Interface %s has IP: %s", ifaceName, addr.String())
 	}
 
-	// Warning nếu attach vào loopback
 	if ifaceName == "lo" {
 		logChan <- "[!] WARNING: XDP attached to LOOPBACK interface!"
 		logChan <- "[!] WARNING: Traffic from external hosts (Kali) will NOT be captured!"
@@ -289,15 +266,14 @@ func main() {
 	startDashboard(ifaceName, &objs, egressObjsPtr)
 }
 
-// Helper function to attach TC Egress using netlink
+// Attach TC Egress using netlink
 func attachTCEgress(iface *net.Interface, objs *EgressObjects) error {
-	// FIX: Sử dụng _ để bỏ qua biến không dùng, tránh lỗi "declared and not used"
 	_, err := netlink.LinkByIndex(iface.Index)
 	if err != nil {
 		return fmt.Errorf("could not get link: %v", err)
 	}
 
-	// 1. Add clsact qdisc (allows attaching BPF to ingress/egress)
+	// Add clsact qdisc
 	qdisc := &netlink.GenericQdisc{
 		QdiscAttrs: netlink.QdiscAttrs{
 			LinkIndex: iface.Index,
@@ -307,18 +283,15 @@ func attachTCEgress(iface *net.Interface, objs *EgressObjects) error {
 		QdiscType: "clsact",
 	}
 
-	// Try to add qdisc, ignore if already exists
 	if err := netlink.QdiscAdd(qdisc); err != nil && !os.IsExist(err) {
-		// Just log, might fail if already exists which is fine
-		// Return error only if it's a real error (not "already exists")
 		return fmt.Errorf("failed to add qdisc: %v", err)
 	}
 
-	// 2. Add BPF Filter to Egress
+	// Add BPF Filter to Egress
 	filter := &netlink.BpfFilter{
 		FilterAttrs: netlink.FilterAttrs{
 			LinkIndex: iface.Index,
-			Parent:    netlink.HANDLE_MIN_EGRESS, // Egress hook
+			Parent:    netlink.HANDLE_MIN_EGRESS,
 			Handle:    1,
 			Protocol:  unix.ETH_P_ALL,
 			Priority:  1,
@@ -336,8 +309,7 @@ func attachTCEgress(iface *net.Interface, objs *EgressObjects) error {
 }
 
 // manageSPAWhitelist periodically checks SPA statistics and logs changes
-// Note: SPA whitelist expiry (30 seconds) is handled by eBPF LRU map auto-eviction
-// The eBPF program uses LRU hash map which will automatically evict old entries
+// SPA whitelist expiry is handled by eBPF LRU map auto-eviction
 func manageSPAWhitelist(objs *PhantomObjects) {
 	ticker := time.NewTicker(2 * time.Second)
 	var lastSuccessCount uint64 = 0
@@ -717,11 +689,9 @@ func startDashboard(iface string, objs *PhantomObjects, egressObjs *EgressObject
 	}
 }
 
-// Fake Ports - "The Mirage": Các port giả mà honeypot sẽ bind
-// Khi quét từ bên ngoài, nmap sẽ thấy các port này "mở"
-// Fake Ports - The Mirage: Danh sách các port giả để honeypot bind
-// LƯU Ý: 9999 là HONEYPOT_PORT (fallback), KHÔNG phải fake port
-// Danh sách này phải khớp với is_fake_port() trong bpf/phantom.c
+// Fake ports for The Mirage (honeypot will bind these ports)
+// This list must match is_fake_port() in bpf/phantom.c
+// Note: 9999 is HONEYPOT_PORT (fallback), not a fake port
 var fakePorts = []int{
 	80,    // HTTP
 	443,   // HTTPS
@@ -750,22 +720,18 @@ var fakePorts = []int{
 	// 9999 is HONEYPOT_PORT (fallback), not a fake port
 }
 
-// --- HONEYPOT LOGIC ---
-// "The Mirage": Bind nhiều port giả để tạo "Ghost Grid"
-// Honeypot sẽ cố gắng bind tất cả các fake ports
-// Nếu bind thành công, XDP sẽ pass packets đến port đó
-// Nếu bind thất bại (port đã được sử dụng), XDP sẽ redirect đến port 9999 (fallback)
+// startHoneypot binds multiple fake ports to create "Ghost Grid" effect
+// If binding succeeds, XDP will pass packets to that port
+// If binding fails, XDP will redirect to port 9999 (fallback)
 func startHoneypot() {
 	var listeners []net.Listener
 	var boundPorts []int
 	var wg sync.WaitGroup
 
-	// Cố gắng bind tất cả các port giả
+	// Try to bind all fake ports
 	for _, port := range fakePorts {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
-			// Port có thể đã được sử dụng, log và skip
-			// XDP sẽ redirect các port này đến 9999
 			logChan <- fmt.Sprintf("[WARN] Cannot bind port %d: %v (XDP will redirect to 9999)", port, err)
 			continue
 		}
@@ -782,19 +748,16 @@ func startHoneypot() {
 					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port %d: %v", p, err)
 					continue
 				}
-				// Debug: Log when connection is accepted
 				remoteAddr := conn.RemoteAddr()
 				if remoteAddr != nil {
 					logChan <- fmt.Sprintf("[DEBUG] Honeypot accepted connection on port %d from %s", p, remoteAddr.String())
 				}
-				// Bind trực tiếp, biết port gốc
 				go handleConnection(conn, p)
 			}
 		}(ln, port)
 	}
 
-	// Fallback: Bind port 9999 cho các port không bind được
-	// QUAN TRỌNG: Port 9999 phải available để XDP redirect hoạt động
+	// Fallback: Bind port 9999 for ports that couldn't be bound
 	logChan <- "[SYSTEM] Attempting to bind honeypot fallback port 9999..."
 	ln9999, err := net.Listen("tcp", ":9999")
 	if err != nil {
@@ -802,7 +765,6 @@ func startHoneypot() {
 		logChan <- "[ERROR] Port 9999 is required for XDP redirect fallback!"
 		logChan <- "[ERROR] To free port 9999, run: sudo lsof -i :9999 && sudo kill -9 <PID>"
 		logChan <- "[ERROR] Or change HONEYPOT_PORT in bpf/phantom.c and rebuild"
-		// Try alternative ports
 		fallbackPorts := []int{9998, 9997, 9996, 8888, 7777}
 		var fallbackListener net.Listener
 		for _, altPort := range fallbackPorts {
@@ -842,19 +804,15 @@ func startHoneypot() {
 			defer wg.Done()
 			logChan <- "[DEBUG] Honeypot Accept() loop started for port 9999"
 			for {
-				// Accept() will block until a connection is established (3-way handshake complete)
-				// If client doesn't send ACK, Accept() will not return
 				conn, err := l.Accept()
 				if err != nil {
 					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port 9999: %v", err)
 					continue
 				}
-				// Debug: Log when connection is accepted on fallback port
 				remoteAddr := conn.RemoteAddr()
 				if remoteAddr != nil {
 					logChan <- fmt.Sprintf("[DEBUG] ✅ Honeypot accepted connection on port 9999 (fallback) from %s", remoteAddr.String())
 				}
-				// XDP đã redirect từ fake port đến 9999
 				go handleConnection(conn, 9999)
 			}
 		}(ln9999)
@@ -866,7 +824,6 @@ func startHoneypot() {
 		return
 	}
 
-	// Check if port 9999 is bound (critical for XDP redirect)
 	port9999Bound := false
 	for _, port := range boundPorts {
 		if port == 9999 {
@@ -875,7 +832,6 @@ func startHoneypot() {
 		}
 	}
 	if !port9999Bound {
-		// Check if port 9999 is in listeners (fallback)
 		for _, ln := range listeners {
 			addr := ln.Addr()
 			if addr != nil {
@@ -896,9 +852,8 @@ func startHoneypot() {
 
 	logChan <- fmt.Sprintf("[SYSTEM] Honeypot bound to %d ports (%d direct, 1 fallback) - The Mirage active", len(listeners), len(boundPorts))
 	logChan <- "[SYSTEM] ✅ Honeypot is now ACCEPTING connections on port 9999"
-	logChan <- "[SYSTEM] ✅ Ready to receive traffic from external hosts (192.168.1.21, etc.)"
+	logChan <- "[SYSTEM] ✅ Ready to receive traffic from external hosts"
 
-	// Cleanup on exit
 	defer func() {
 		for _, ln := range listeners {
 			ln.Close()
@@ -931,8 +886,7 @@ func selectRandomService() string {
 	return serviceTypes[rand.Intn(len(serviceTypes))]
 }
 
-// selectServiceByPort: Chọn service type dựa trên port để tạo ảo giác thực tế hơn
-// "The Mirage": Mỗi port sẽ có service type phù hợp, tạo "Ghost Grid" chân thực
+// selectServiceByPort selects service type based on port for realistic deception
 func selectServiceByPort(port int) string {
 	switch port {
 	case 80, 443, 8080, 8443, 8000, 8888:
@@ -942,19 +896,18 @@ func selectServiceByPort(port int) string {
 	case 6379, 11211:
 		return "redis"
 	case 27017, 27018:
-		return "mysql" // MongoDB handshake tương tự MySQL
+		return "mysql"
 	case 21:
 		return "ftp"
 	case 23:
 		return "telnet"
 	case 3389, 5900:
-		return "ssh" // RDP/VNC giả lập như SSH
+		return "ssh"
 	case 9200, 5601:
-		return "http" // Elasticsearch/Kibana giả lập như HTTP
+		return "http"
 	case 3000, 5000:
-		return "http" // Node.js/Flask giả lập như HTTP
+		return "http"
 	default:
-		// Random cho các port khác
 		return selectRandomService()
 	}
 }
@@ -966,34 +919,23 @@ func handleConnection(conn net.Conn, originalPort int) {
 		return
 	}
 	remote := remoteAddr.String()
-	// Extract IP address only (remove port)
-	// Handle IPv6 addresses with brackets: [::1]:9999 -> [::1]
-	// Handle IPv4 addresses: 192.168.1.100:12345 -> 192.168.1.100
 	var ip string
 	if strings.HasPrefix(remote, "[") {
-		// IPv6 with brackets: [::1]:9999
 		endBracket := strings.Index(remote, "]")
 		if endBracket > 0 {
-			ip = remote[1:endBracket] // Remove brackets
+			ip = remote[1:endBracket]
 		} else {
-			// Fallback to simple split if bracket format is wrong
 			ip = strings.Split(remote, ":")[0]
 		}
 	} else {
-		// IPv4: 192.168.1.100:12345
 		ip = strings.Split(remote, ":")[0]
 	}
 	t := time.Now().Format("15:04:05")
 
-	// Chọn service type dựa trên port (để tạo ảo giác thực tế hơn)
-	// Nếu originalPort là 9999, có nghĩa là XDP đã redirect từ fake port
-	// Sử dụng random service để tạo "Ghost Grid" effect
 	var serviceType string
 	if originalPort == 9999 {
-		// XDP đã redirect, không biết port gốc, sử dụng random
 		serviceType = selectRandomService()
 	} else {
-		// Bind trực tiếp, biết port gốc
 		serviceType = selectServiceByPort(originalPort)
 	}
 	banner := getRandomBanner(serviceType)
@@ -1006,8 +948,6 @@ func handleConnection(conn net.Conn, originalPort int) {
 		return
 	}
 
-	// The Mirage: Mỗi kết nối nhận một dịch vụ ngẫu nhiên
-	// Tạo "Ghost Grid" - hacker thấy hàng ngàn cổng "mở" với các dịch vụ khác nhau
 	switch serviceType {
 	case "ssh":
 		handleSSHInteraction(conn, remote, t)
@@ -1027,10 +967,8 @@ func handleConnection(conn net.Conn, originalPort int) {
 }
 
 func handleSSHInteraction(conn net.Conn, remote, t string) {
-	// Simulate SSH handshake delay
 	time.Sleep(100 * time.Millisecond)
 
-	// Send SSH prompt
 	prompt := "root@server:~# "
 	conn.Write([]byte(prompt))
 
@@ -1051,12 +989,10 @@ func handleSSHInteraction(conn net.Conn, remote, t string) {
 			continue
 		}
 
-		// Log command
 		logChan <- fmt.Sprintf("[%s] SSH COMMAND: %s", t, input)
 		logAttack(ip, fmt.Sprintf("SSH: %s", input))
 		commandHistory = append(commandHistory, input)
 
-		// Parse command
 		parts := strings.Fields(input)
 		if len(parts) == 0 {
 			conn.Write([]byte(prompt))
@@ -1065,8 +1001,6 @@ func handleSSHInteraction(conn net.Conn, remote, t string) {
 
 		cmd := parts[0]
 		args := parts[1:]
-
-		// Handle commands
 		switch cmd {
 		case "exit", "logout":
 			conn.Write([]byte("Connection closed.\r\n"))
@@ -1151,7 +1085,6 @@ func handleSSHInteraction(conn net.Conn, remote, t string) {
 				conn.Write([]byte(fmt.Sprintf("%s: missing URL\r\n", cmd) + prompt))
 			}
 		default:
-			// Simulate command execution delay
 			time.Sleep(50 * time.Millisecond)
 			conn.Write([]byte(fmt.Sprintf("bash: %s: command not found\r\n", cmd) + prompt))
 		}
@@ -1168,7 +1101,6 @@ func handleHTTPInteraction(conn net.Conn, remote, t string) {
 	request := string(buf[:n])
 	ip := strings.Split(remote, ":")[0]
 
-	// Parse HTTP request
 	lines := strings.Split(request, "\r\n")
 	if len(lines) == 0 {
 		return
@@ -1178,7 +1110,6 @@ func handleHTTPInteraction(conn net.Conn, remote, t string) {
 	logChan <- fmt.Sprintf("[%s] HTTP REQUEST: %s", t, requestLine)
 	logAttack(ip, fmt.Sprintf("HTTP: %s", requestLine))
 
-	// Extract method and path
 	parts := strings.Fields(requestLine)
 	if len(parts) < 2 {
 		return
@@ -1187,7 +1118,6 @@ func handleHTTPInteraction(conn net.Conn, remote, t string) {
 	method := parts[0]
 	path := parts[1]
 
-	// Generate response based on path
 	var response string
 
 	switch path {
@@ -1239,7 +1169,6 @@ func handleHTTPInteraction(conn net.Conn, remote, t string) {
 		response += "\r\n"
 		response += "403 Forbidden"
 	default:
-		// Check if it's a POST request with credentials
 		if method == "POST" && strings.Contains(request, "password") {
 			logChan <- fmt.Sprintf("[%s] HTTP POST with credentials detected!", t)
 			response = "HTTP/1.1 302 Found\r\n"
@@ -1256,12 +1185,10 @@ func handleHTTPInteraction(conn net.Conn, remote, t string) {
 
 	conn.Write([]byte(response))
 
-	// Keep connection alive for a short time to allow multiple requests
 	time.Sleep(100 * time.Millisecond)
 }
 
 func handleTelnetInteraction(conn net.Conn, remote, t string) {
-	// Send login prompt
 	conn.Write([]byte("\r\nUbuntu 20.04.3 LTS\r\n\r\n"))
 	time.Sleep(200 * time.Millisecond)
 	conn.Write([]byte("server login: "))
@@ -1269,7 +1196,6 @@ func handleTelnetInteraction(conn net.Conn, remote, t string) {
 	buf := make([]byte, 1024)
 	loginAttempts := 0
 
-	// Wait for username
 	n, err := conn.Read(buf)
 	if err != nil || n == 0 {
 		return
@@ -1279,7 +1205,6 @@ func handleTelnetInteraction(conn net.Conn, remote, t string) {
 
 	conn.Write([]byte("\r\nPassword: "))
 
-	// Wait for password (don't echo)
 	n, err = conn.Read(buf)
 	if err != nil || n == 0 {
 		return
@@ -1291,14 +1216,11 @@ func handleTelnetInteraction(conn net.Conn, remote, t string) {
 	logChan <- fmt.Sprintf("[%s] TELNET PASSWORD ATTEMPT #%d from %s (password length: %d)", t, loginAttempts, ip, len(password))
 	logAttack(ip, fmt.Sprintf("TELNET_LOGIN: user=%s, pass=***", username))
 
-	// Simulate login delay
 	time.Sleep(500 * time.Millisecond)
 
-	// Always fail login but show different messages
 	if loginAttempts < 3 {
 		conn.Write([]byte("\r\nLogin incorrect\r\n\r\n"))
 		conn.Write([]byte("server login: "))
-		// Wait for another attempt
 		n, err = conn.Read(buf)
 		if err != nil {
 			return
@@ -1313,7 +1235,6 @@ func handleTelnetInteraction(conn net.Conn, remote, t string) {
 		logChan <- fmt.Sprintf("[%s] TELNET PASSWORD ATTEMPT #%d from %s", t, loginAttempts, ip)
 	}
 
-	// After 3 attempts, show "connection closed"
 	conn.Write([]byte("\r\nToo many login attempts. Connection closed.\r\n"))
 }
 
@@ -1322,16 +1243,12 @@ func handleMySQLInteraction(conn net.Conn, remote, t string) {
 	logChan <- fmt.Sprintf("[%s] MySQL connection attempt from %s", t, ip)
 	logAttack(ip, "MySQL_CONNECTION")
 
-	// MySQL handshake has already been sent in banner
-	// Wait for authentication packet
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
 	if err != nil || n == 0 {
 		return
 	}
 
-	// Parse authentication attempt
-	// MySQL auth packet structure is complex, but we can detect username
 	if n > 4 {
 		usernameLen := int(buf[4])
 		if usernameLen > 0 && usernameLen < 32 {
@@ -1341,7 +1258,6 @@ func handleMySQLInteraction(conn net.Conn, remote, t string) {
 		}
 	}
 
-	// Send error response (authentication failed)
 	errorPacket := []byte{0xff, 0x15, 0x04, 0x23, 0x28, 0x30, 0x30, 0x30, 0x30, 0x34}
 	errorPacket = append(errorPacket, []byte("Access denied for user")...)
 	conn.Write(errorPacket)
@@ -1365,7 +1281,6 @@ func handleRedisInteraction(conn net.Conn, remote, t string) {
 		logChan <- fmt.Sprintf("[%s] REDIS COMMAND: %s", t, command)
 		logAttack(ip, fmt.Sprintf("REDIS: %s", command))
 
-		// Parse Redis protocol (simplified)
 		parts := strings.Fields(command)
 		if len(parts) == 0 {
 			conn.Write([]byte("-ERR unknown command\r\n"))
@@ -1415,7 +1330,6 @@ func handleFTPInteraction(conn net.Conn, remote, t string) {
 	logChan <- fmt.Sprintf("[%s] FTP connection from %s", t, ip)
 	logAttack(ip, "FTP_CONNECTION")
 
-	// FTP banner already sent
 	conn.Write([]byte("220 Welcome to FTP Server\r\n"))
 
 	buf := make([]byte, 1024)

@@ -33,7 +33,6 @@ func main() {
 	}
 	defer conn.Close()
 
-	// Send Magic Packet with secret token (exactly 21 bytes, no null terminator)
 	tokenBytes := []byte(SPA_SECRET_TOKEN)
 	if len(tokenBytes) != 21 {
 		fmt.Printf("[!] Error: Token length mismatch (expected 21, got %d)\n", len(tokenBytes))
@@ -52,6 +51,5 @@ func main() {
 	fmt.Printf("    ssh user@%s\n", serverIP)
 	fmt.Println("\n[*] Note: Whitelist expires in 30 seconds")
 
-	// Wait a moment to ensure packet is sent
 	time.Sleep(100 * time.Millisecond)
 }

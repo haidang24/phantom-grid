@@ -26,7 +26,7 @@ struct {
     __type(value, __u64);
 } suspicious_patterns SEC(".maps");
 
-// HELPER: So sánh chuỗi thủ công để vượt qua trình xác thực eBPF
+// Manual string comparison for eBPF verification
 static __always_inline int check_pattern(void *data, const char *pattern, __u32 len) {
     unsigned char *d = (unsigned char *)data;
     const unsigned char *p = (const unsigned char *)pattern;
@@ -39,19 +39,19 @@ static __always_inline int check_pattern(void *data, const char *pattern, __u32 
     return 1;
 }
 
-// HÀM KIỂM TRA DỮ LIỆU NHẠY CẢM
+// Detect suspicious data patterns
 static __always_inline int detect_suspicious_pattern(void *data, __u32 data_len) {
     if (data_len == 0 || data_len > MAX_PAYLOAD_SCAN) return 0;
     
-    // 1. Kiểm tra file passwd
+    // Check for /etc/passwd format
     char p1[] = "root:x:0:0:";
     if (data_len >= 11 && check_pattern(data, p1, 11)) return 1;
     
-    // 2. Kiểm tra SSH Key
+    // Check for SSH private key
     char p2[] = "-----BEGIN";
     if (data_len >= 10 && check_pattern(data, p2, 10)) return 2;
     
-    // 3. Kiểm tra Base64 (Đã tối ưu ngưỡng 95% để tránh chặn nhầm banner)
+    // Check for Base64 (threshold 95% to avoid false positives)
     __u32 base64_count = 0;
     for (__u32 i = 0; i < data_len && i < 64; i++) {
         char c = ((char *)data)[i];
@@ -60,10 +60,9 @@ static __always_inline int detect_suspicious_pattern(void *data, __u32 data_len)
             base64_count++;
         }
     }
-    // Chỉ đánh dấu là Base64 nếu tỷ lệ khớp cực cao (>95%) và độ dài đủ lớn
     if (base64_count * 100 > data_len * 95 && data_len > 64) return 3;
     
-    // 4. Kiểm tra SQL Injection
+    // Check for SQL dump
     char p4[] = "INSERT INTO";
     if (data_len >= 11 && check_pattern(data, p4, 11)) return 4;
     
@@ -86,7 +85,7 @@ int phantom_egress_prog(struct __sk_buff *skb) {
     struct tcphdr *tcp = (void *)(ip + 1);
     if ((void *)(tcp + 1) > data_end) return TC_ACT_OK;
     
-    // Chỉ kiểm tra dữ liệu đi ra từ cổng Honeypot
+    // Only check data from honeypot port
     if (tcp->source != bpf_htons(HONEYPOT_PORT)) return TC_ACT_OK;
     
     __u32 tcp_hdr_len = (tcp->doff) * 4;
@@ -101,7 +100,6 @@ int phantom_egress_prog(struct __sk_buff *skb) {
     int pattern_type = detect_suspicious_pattern(payload, payload_len);
     
     if (pattern_type > 0) {
-        // Cập nhật số liệu vào Map để hiển thị lên Dashboard
         __u32 key = 0;
         __u64 *val = bpf_map_lookup_elem(&egress_blocks, &key);
         if (val) __sync_fetch_and_add(val, 1);
@@ -110,8 +108,7 @@ int phantom_egress_prog(struct __sk_buff *skb) {
         __u64 *pattern_val = bpf_map_lookup_elem(&suspicious_patterns, &pattern_key);
         if (pattern_val) __sync_fetch_and_add(pattern_val, 1);
 
-        // QUAN TRỌNG: Trả về TC_ACT_OK để không chặn gói tin (Demo Mode)
-        // Nếu muốn chặn thực tế, hãy đổi thành TC_ACT_SHOT
+        // Return TC_ACT_OK for demo mode (use TC_ACT_SHOT to actually block)
         return TC_ACT_OK; 
     }
 
