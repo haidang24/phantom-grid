@@ -324,8 +324,29 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_PASS;
         }
 
-        // 3. Chặn Stealth Scans (sau khi đã check port 9999)
-        // LƯU Ý: ACK packets đến port 9999 đã được PASS ở trên
+        // 3. PASS Fake Ports trực tiếp (The Mirage) - để các port này hiện ra riêng biệt khi quét
+        // Fake ports sẽ được honeypot bind trực tiếp
+        // Nếu honeypot bind được → port hiện "open" với port gốc (80, 443, 3306, etc.)
+        // Nếu honeypot không bind được (port < 1024 cần sudo) → kernel gửi RST → port hiện "closed"
+        // LƯU Ý: Để tất cả fake ports hiện "open", cần chạy với sudo để bind ports < 1024
+        if (is_fake_port(tcp->dest)) {
+            // Update statistics
+            __u32 key = 0;
+            __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
+            if (val) __sync_fetch_and_add(val, 1);
+            
+            // PASS packet trực tiếp đến fake port (không redirect)
+            // Honeypot sẽ bind và respond trên port gốc
+            // Nếu honeypot không bind được, kernel sẽ gửi RST
+            mutate_os_personality(ip, tcp);
+            
+            // PASS - honeypot sẽ respond trên port gốc
+            // Nmap sẽ thấy port gốc (80, 443, 3306, etc.) là "open"
+            return XDP_PASS;
+        }
+
+        // 4. Chặn Stealth Scans (sau khi đã check port 9999 và fake ports)
+        // LƯU Ý: ACK packets đến port 9999 và fake ports đã được PASS ở trên
         // Chỉ chặn stealth scans đến các port khác
         if (is_stealth_scan(tcp)) {
             __u32 key = 0;
@@ -334,9 +355,9 @@ int phantom_prog(struct xdp_md *ctx) {
             return XDP_DROP;
         }
 
-        // 4. Redirect TẤT CẢ ports khác (trừ SSH và 9999) đến honeypot
-        // Logic đơn giản: Nếu không phải SSH và không phải 9999 → redirect đến 9999
-        // Điều này đảm bảo honeypot nhận được traffic từ mọi port
+        // 5. Redirect các ports khác (không phải SSH, 9999, fake ports) đến honeypot fallback
+        // Đây là các ports không được định nghĩa là fake ports
+        // Redirect đến 9999 để honeypot xử lý
         __u32 key = 0;
         __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
         if (val) __sync_fetch_and_add(val, 1);
@@ -345,21 +366,15 @@ int phantom_prog(struct xdp_md *ctx) {
         __be16 old_port = tcp->dest;
         __be16 new_port = bpf_htons(HONEYPOT_PORT);
         
-        // Update checksum TRƯỚC khi thay đổi port
-        update_csum16(&tcp->check, old_port, new_port);
+        // Với XDP Generic mode, set checksum = 0 để kernel tự tính lại
         tcp->dest = new_port;
+        tcp->check = 0; // Kernel sẽ tự tính lại checksum
         
         // Mutate OS personality để confuse fingerprinting
-        // LƯU Ý: mutate_os_personality modify IP checksum (TTL) và TCP checksum (Window)
-        // Nhưng vì đã update TCP checksum cho port redirect, nên cần gọi sau
-        // mutate_os_personality sẽ update lại TCP checksum cho Window change
         mutate_os_personality(ip, tcp);
         
         // QUAN TRỌNG: Return XDP_PASS ngay sau khi redirect
         // Packet bây giờ có dest_port = 9999, sẽ được kernel forward đến honeypot
-        // Kernel sẽ tự động gửi SYN-ACK khi honeypot Accept() connection
-        // Nếu honeypot không accept, kernel sẽ gửi RST → port hiện "closed"
-        // Nếu XDP drop, không có response → port hiện "filtered"
         return XDP_PASS;
     }
     
