@@ -1052,7 +1052,7 @@ func handleTelnetInteraction(conn net.Conn, remote, t string) {
 	loginAttempts++
 	
 	ip := strings.Split(remote, ":")[0]
-	logChan <- fmt.Sprintf("[%s] TELNET PASSWORD ATTEMPT #%d from %s", t, loginAttempts, ip)
+	logChan <- fmt.Sprintf("[%s] TELNET PASSWORD ATTEMPT #%d from %s (password length: %d)", t, loginAttempts, ip, len(password))
 	logAttack(ip, fmt.Sprintf("TELNET_LOGIN: user=%s, pass=***", username))
 	
 	// Simulate login delay
