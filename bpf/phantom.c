@@ -336,15 +336,23 @@ int phantom_prog(struct xdp_md *ctx) {
         __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
         if (val) __sync_fetch_and_add(val, 1);
 
+        // Redirect port: old_port → 9999
         __be16 old_port = tcp->dest;
         __be16 new_port = bpf_htons(HONEYPOT_PORT);
         
+        // Update checksum trước khi thay đổi port
         update_csum16(&tcp->check, old_port, new_port);
         tcp->dest = new_port;
         
+        // Mutate OS personality để confuse fingerprinting
         mutate_os_personality(ip, tcp);
+        
+        // QUAN TRỌNG: Return XDP_PASS ngay sau khi redirect
+        // Packet bây giờ có dest_port = 9999, sẽ được kernel forward đến honeypot
+        return XDP_PASS;
     }
     
+    // Default: PASS tất cả traffic không phải TCP
     return XDP_PASS;
 }
 
