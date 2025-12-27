@@ -121,34 +121,63 @@ func main() {
 
 	// Try common interface names - ưu tiên external interface trước
 	// Để "The Mirage" hoạt động, cần attach vào interface nhận traffic từ bên ngoài
-	// Ưu tiên ens33 (VMware thường dùng interface này)
-	interfaceNames := []string{"ens33", "eth0", "enp0s3", "enp0s8", "enp0s9", "eth1"}
+	// Ưu tiên WiFi interface (wlx*), sau đó ens33 (VMware), rồi các interface khác
+	interfaceNames := []string{"wlx00127b2163a6", "wlan0", "ens33", "eth0", "enp0s3", "enp0s8", "enp0s9", "eth1"}
 	var foundExternal bool
-	for _, name := range interfaceNames {
-		iface, err = net.InterfaceByName(name)
-		if err == nil {
-			// Kiểm tra xem interface có IP address không (không phải loopback)
-			addrs, _ := iface.Addrs()
+
+	// First, try to find WiFi interface by pattern (wlx*, wlan*, wlp*)
+	wifiInterfaces, _ := net.Interfaces()
+	for _, candidateIface := range wifiInterfaces {
+		if strings.HasPrefix(candidateIface.Name, "wlx") ||
+			strings.HasPrefix(candidateIface.Name, "wlan") ||
+			strings.HasPrefix(candidateIface.Name, "wlp") {
+			addrs, _ := candidateIface.Addrs()
 			if len(addrs) > 0 {
-				// Kiểm tra xem có phải loopback không
-				isLoopback := (iface.Flags & net.FlagLoopback) != 0
+				isLoopback := (candidateIface.Flags & net.FlagLoopback) != 0
 				if !isLoopback {
-					ifaceName = name
+					// Create a copy to avoid pointer issues
+					ifaceCopy := candidateIface
+					iface = &ifaceCopy
+					ifaceName = candidateIface.Name
 					foundExternal = true
-					log.Printf("[*] Using network interface: %s (index: %d)", ifaceName, iface.Index)
-					// Log IP addresses
+					log.Printf("[*] Found WiFi interface: %s (index: %d)", ifaceName, iface.Index)
 					for _, addr := range addrs {
 						log.Printf("[*]   IP: %s", addr.String())
 					}
 					break
+				}
+			}
+		}
+	}
+
+	// If WiFi not found, try exact interface names
+	if !foundExternal {
+		for _, name := range interfaceNames {
+			iface, err = net.InterfaceByName(name)
+			if err == nil {
+				// Kiểm tra xem interface có IP address không (không phải loopback)
+				addrs, _ := iface.Addrs()
+				if len(addrs) > 0 {
+					// Kiểm tra xem có phải loopback không
+					isLoopback := (iface.Flags & net.FlagLoopback) != 0
+					if !isLoopback {
+						ifaceName = name
+						foundExternal = true
+						log.Printf("[*] Using network interface: %s (index: %d)", ifaceName, iface.Index)
+						// Log IP addresses
+						for _, addr := range addrs {
+							log.Printf("[*]   IP: %s", addr.String())
+						}
+						break
+					} else {
+						log.Printf("[DEBUG] Interface %s is loopback, skipping", name)
+					}
 				} else {
-					log.Printf("[DEBUG] Interface %s is loopback, skipping", name)
+					log.Printf("[DEBUG] Interface %s has no IP addresses, skipping", name)
 				}
 			} else {
-				log.Printf("[DEBUG] Interface %s has no IP addresses, skipping", name)
+				log.Printf("[DEBUG] Interface %s not found: %v", name, err)
 			}
-		} else {
-			log.Printf("[DEBUG] Interface %s not found: %v", name, err)
 		}
 	}
 
@@ -505,6 +534,9 @@ func startDashboard(iface string, objs *PhantomObjects, egressObjs *EgressObject
 		}
 	}()
 
+	// Track previous attack stats to detect new connections
+	var lastAttackCount uint64 = 0
+
 	// Update statistics
 	go func() {
 		for range statsTicker.C {
@@ -512,6 +544,15 @@ func startDashboard(iface string, objs *PhantomObjects, egressObjs *EgressObject
 			var attackVal uint64
 			if err := objs.AttackStats.Lookup(attackKey, &attackVal); err == nil {
 				redirectedBox.Text = fmt.Sprintf("\n\n   %d", attackVal)
+
+				// Debug: Log when attack stats increase (XDP detected packets)
+				if attackVal > lastAttackCount {
+					newAttacks := attackVal - lastAttackCount
+					if newAttacks > 0 {
+						logChan <- fmt.Sprintf("[DEBUG] XDP detected %d new SYN packets to fake ports (Total: %d)", newAttacks, attackVal)
+					}
+					lastAttackCount = attackVal
+				}
 			}
 
 			var stealthKey uint32 = 0
@@ -730,6 +771,11 @@ func startHoneypot() {
 					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port %d: %v", p, err)
 					continue
 				}
+				// Debug: Log when connection is accepted
+				remoteAddr := conn.RemoteAddr()
+				if remoteAddr != nil {
+					logChan <- fmt.Sprintf("[DEBUG] Honeypot accepted connection on port %d from %s", p, remoteAddr.String())
+				}
 				// Bind trực tiếp, biết port gốc
 				go handleConnection(conn, p)
 			}
@@ -752,6 +798,11 @@ func startHoneypot() {
 				if err != nil {
 					logChan <- fmt.Sprintf("[ERROR] Honeypot accept error on port 9999: %v", err)
 					continue
+				}
+				// Debug: Log when connection is accepted on fallback port
+				remoteAddr := conn.RemoteAddr()
+				if remoteAddr != nil {
+					logChan <- fmt.Sprintf("[DEBUG] Honeypot accepted connection on port 9999 (fallback) from %s", remoteAddr.String())
 				}
 				// XDP đã redirect từ fake port đến 9999
 				go handleConnection(conn, 9999)
