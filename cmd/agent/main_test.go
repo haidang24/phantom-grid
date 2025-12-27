@@ -201,13 +201,23 @@ func TestExtractIPFromRemoteAddr(t *testing.T) {
 				return
 			}
 
-			// Match the actual implementation in main.go line 964
-			parts := strings.Split(tt.remoteAddr, ":")
-			if len(parts) < 2 {
-				t.Errorf("Invalid remote address format: %s", tt.remoteAddr)
-				return
+			// Match the actual implementation in main.go (lines 962-977)
+			remote := tt.remoteAddr
+			var ip string
+			if strings.HasPrefix(remote, "[") {
+				// IPv6 with brackets: [::1]:9999
+				endBracket := strings.Index(remote, "]")
+				if endBracket > 0 {
+					ip = remote[1:endBracket] // Remove brackets
+				} else {
+					// Fallback to simple split if bracket format is wrong
+					ip = strings.Split(remote, ":")[0]
+				}
+			} else {
+				// IPv4: 192.168.1.100:12345
+				ip = strings.Split(remote, ":")[0]
 			}
-			ip := parts[0]
+
 			if ip != tt.expectedIP {
 				t.Errorf("Extracted IP = %s, expected %s", ip, tt.expectedIP)
 			}
