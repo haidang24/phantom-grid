@@ -336,7 +336,6 @@ int phantom_prog(struct xdp_md *ctx) {
         __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);
         if (val) __sync_fetch_and_add(val, 1);
 
-        __be16 old_port = tcp->dest;
         __be16 new_port = bpf_htons(HONEYPOT_PORT);
         
         tcp->dest = new_port;

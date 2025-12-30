@@ -279,26 +279,67 @@ docker run -it --privileged --network host -v $(pwd):/app phantom-grid:dev
 
 ### Quick Start
 
-**Auto-detect network interface:**
+#### Option 1: Auto-detect Network Interface (Testing Only)
+
+Chương trình sẽ tự động tìm card mạng:
 
 ```bash
 sudo make run
+# hoặc
+sudo ./bin/phantom-grid
 ```
 
-**Specify network interface:**
+**Thứ tự auto-detect:**
+
+1. WiFi interfaces (wlx*, wlan*, wlp\*)
+2. Common interfaces: ens33, eth0, enp0s3, enp0s8, enp0s9, eth1
+3. Fallback: loopback (lo) - **chỉ dùng cho testing local**
+
+> **Warning:** Auto-detect có thể chọn sai interface hoặc fallback về loopback. **Không dùng cho production!**
+
+#### Option 2: Specify Network Interface (Recommended for Production)
+
+**Bước 1: Xem danh sách card mạng có sẵn:**
 
 ```bash
-# List available interfaces
 ip link show
-
-# Run with specific interface
-sudo ./phantom-grid -interface ens33
-
-# Or using Makefile
-make run-interface INTERFACE=ens33
+# hoặc
+ifconfig -a
 ```
 
-> **Important:** For production deployment, always specify the external interface using the `-interface` flag. Auto-detection may default to loopback (`lo`), which won't capture external traffic.
+**Bước 2: Chạy với card mạng cụ thể:**
+
+```bash
+# Cách 1: Dùng Makefile (khuyến nghị)
+make run-interface INTERFACE=ens33
+
+# Cách 2: Chạy trực tiếp binary
+sudo ./bin/phantom-grid -interface ens33
+
+# Ví dụ với các card mạng khác:
+sudo ./bin/phantom-grid -interface eth0      # Ethernet card
+sudo ./bin/phantom-grid -interface wlan0      # WiFi card
+sudo ./bin/phantom-grid -interface enp0s3     # USB Ethernet
+```
+
+**Làm sao biết chọn card mạng nào?**
+
+- **VMware/VirtualBox:** Thường là `ens33`, `enp0s3`, hoặc `eth0`
+- **Physical server:** Thường là `eth0`, `eth1`, hoặc `enp*s*`
+- **WiFi:** Thường là `wlan0`, `wlx*`, hoặc `wlp*`
+- **Kiểm tra IP:** Card mạng có IP address (không phải 127.0.0.1) là card external
+
+**Ví dụ kiểm tra:**
+
+```bash
+# Xem card mạng và IP của chúng
+ip addr show
+
+# Tìm card có IP external (không phải loopback)
+ip addr show | grep -E "^[0-9]+:|inet " | grep -v "127.0.0.1"
+```
+
+> **Important:** Luôn chỉ định card mạng external bằng `-interface` flag cho production. Auto-detect có thể chọn sai và không capture được traffic từ bên ngoài.
 
 ### SPA Authentication
 
