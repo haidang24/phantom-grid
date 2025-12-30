@@ -25,10 +25,11 @@ type Agent struct {
 	honeypot   *honeypot.Honeypot
 	spaManager *spa.Manager
 	logChan    chan<- string
+	logManager *logger.Manager
 }
 
 // New creates a new Agent instance
-func New(interfaceName string) (*Agent, error) {
+func New(interfaceName string, outputMode config.OutputMode, elkConfig config.ELKConfiguration, dashboardChan chan<- string) (*Agent, error) {
 	// Detect network interface
 	iface, ifaceName, err := network.DetectInterface(interfaceName)
 	if err != nil {
@@ -47,11 +48,18 @@ func New(interfaceName string) (*Agent, error) {
 		log.Printf("[!] TC Egress DLP will be disabled. Main XDP protection still active.")
 	}
 
+	// Initialize logger manager
+	logManager, err := logger.NewManager(outputMode, elkConfig, dashboardChan)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize logger manager: %w", err)
+	}
+
 	agent := &Agent{
 		ebpfLoader: ebpfLoader,
 		iface:      iface,
 		ifaceName:  ifaceName,
-		logChan:    logger.LogChannel,
+		logChan:    logManager.LogChannel(),
+		logManager: logManager,
 	}
 
 	return agent, nil
@@ -193,6 +201,11 @@ func (a *Agent) GetInterfaceName() string {
 func (a *Agent) Close() error {
 	if a.honeypot != nil {
 		if err := a.honeypot.Close(); err != nil {
+			return err
+		}
+	}
+	if a.logManager != nil {
+		if err := a.logManager.Close(); err != nil {
 			return err
 		}
 	}

@@ -85,7 +85,7 @@ func (d *Dashboard) runEventLoop(w *DashboardWidgets) {
 					ui.Render(w.logList, w.connStatsBox)
 				}
 			}
-		case msg := <-logger.LogChannel:
+		case msg := <-d.logChan:
 			d.handleLogMessage(msg, w, paused, &autoScroll)
 		case <-ticker.C:
 			ui.Render(w.logList, w.connStatsBox)

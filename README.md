@@ -528,10 +528,60 @@ The Phantom Grid dashboard shows:
 Usage: ./bin/phantom-grid [OPTIONS]
 
 Options:
-  -interface string    Network interface name (required for production)
-                       If not specified, auto-detection will be attempted
-  -h, -help           Show help message
+  -interface string       Network interface name (required for production)
+                          If not specified, auto-detection will be attempted
+
+  -output string          Output mode: 'dashboard', 'elk', or 'both' (default: "dashboard")
+
+  -elk-address string     Elasticsearch address (default: "http://localhost:9200")
+                          For multiple addresses: "http://es1:9200,http://es2:9200"
+
+  -elk-index string       Elasticsearch index name (default: "phantom-grid")
+
+  -elk-user string        Elasticsearch username (optional, for basic auth)
+
+  -elk-pass string        Elasticsearch password (optional, for basic auth)
+
+  -elk-tls                Enable TLS for Elasticsearch connections
+
+  -elk-skip-verify        Skip TLS certificate verification (testing only)
+
+  -h, -help               Show help message
 ```
+
+### Output Modes
+
+Phantom Grid supports three output modes:
+
+**1. Dashboard Only (Default):**
+
+```bash
+sudo ./bin/phantom-grid -interface ens33 -output dashboard
+```
+
+Shows events in terminal dashboard only.
+
+**2. ELK Only:**
+
+```bash
+sudo ./bin/phantom-grid -interface ens33 -output elk \
+  -elk-address http://localhost:9200 \
+  -elk-index phantom-grid
+```
+
+Sends all events to Elasticsearch. No dashboard displayed. Ideal for headless servers.
+
+**3. Both Dashboard and ELK:**
+
+```bash
+sudo ./bin/phantom-grid -interface ens33 -output both \
+  -elk-address http://localhost:9200 \
+  -elk-index phantom-grid
+```
+
+Shows events in dashboard AND sends to Elasticsearch. Best for development.
+
+For detailed ELK integration guide, see [`docs/ELK_INTEGRATION.md`](docs/ELK_INTEGRATION.md).
 
 ### Dashboard Controls
 
@@ -996,6 +1046,16 @@ Contributions are welcome! Please read:
 - [`SECURITY.md`](SECURITY.md) – how to report vulnerabilities responsibly
 
 For detailed technical documentation, see the [`docs/`](docs/) directory.
+
+### ELK Integration
+
+Phantom Grid can export security events to Elasticsearch for centralized logging and analysis. See [`docs/ELK_INTEGRATION.md`](docs/ELK_INTEGRATION.md) for:
+
+- Complete setup guide
+- Configuration examples
+- Kibana dashboard setup
+- Performance tuning
+- Troubleshooting
 
 ---
 
