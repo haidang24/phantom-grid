@@ -70,7 +70,7 @@ _Real-time forensics dashboard showing live attack detection, connection statist
 
 ### Kernel Space Components
 
-#### XDP Program (`bpf/phantom.c`)
+#### XDP Program (`internal/ebpf/programs/phantom.c`)
 
 The XDP (eXpress Data Path) program is attached to a network interface and processes packets at the NIC driver level for wire-speed performance.
 
@@ -261,7 +261,7 @@ ssh user@PHANTOM_IP
 
 4. **Monitor in dashboard:**
 
-- Watch for `[SPA] ✅ Successful authentication` messages
+- Watch for `[SPA] Successful authentication` messages
 - Server remains invisible to non-whitelisted IPs
 - Whitelist expires automatically after 30 seconds (LRU map auto-eviction)
 
@@ -318,17 +318,32 @@ make test-coverage
 
 ```
 phantom-grid/
-├── bpf/
-│   ├── phantom.c          # XDP program (ingress)
-│   ├── phantom_egress.c   # TC program (egress DLP)
-│   └── phantom_spa.c      # SPA module (standalone)
 ├── cmd/
-│   ├── agent/
-│   │   ├── main.go        # Main agent
-│   │   └── main_test.go   # Unit tests
-│   └── spa-client/
-│       ├── main.go        # SPA client tool
-│       └── main_test.go   # Unit tests
+│   ├── agent/             # Main Phantom Grid agent
+│   │   └── main.go
+│   └── spa-client/        # SPA client CLI tool
+│       └── main.go
+├── internal/
+│   ├── agent/             # Agent core logic
+│   ├── config/            # Configuration and constants
+│   ├── dashboard/         # Terminal UI dashboard
+│   ├── ebpf/
+│   │   ├── loader.go      # eBPF loader and bindings
+│   │   └── programs/      # eBPF C programs
+│   │       ├── phantom.c          # XDP program (ingress)
+│   │       ├── phantom_egress.c   # TC program (egress DLP)
+│   │       └── phantom_spa.c      # SPA module
+│   ├── honeypot/          # Honeypot implementation
+│   ├── logger/            # Logging utilities
+│   ├── mirage/            # Fake service banners
+│   ├── network/           # Network interface detection
+│   └── spa/               # SPA manager
+├── pkg/
+│   └── spa/               # Reusable SPA client package
+├── assets/                # Static assets (images, etc.)
+├── docs/                  # Technical documentation
+├── logs/                  # Runtime logs (gitignored)
+├── bin/                   # Build output (gitignored)
 ├── Makefile
 ├── go.mod
 └── README.md
@@ -352,6 +367,18 @@ make build
 make clean
 ```
 
+### Contributing
+
+Contributions are welcome!  
+Please read:
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) – development workflow, coding style, and PR checklist
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) – rules for respectful, professional collaboration
+- [`SECURITY.md`](SECURITY.md) – how to report vulnerabilities responsibly
+- [`CHANGELOG.md`](CHANGELOG.md) – project version history
+
+For detailed technical documentation, see the [`docs/`](docs/) directory.
+
 ### Dashboard Controls
 
 - `j` / `k`: Scroll down/up in log panel
@@ -374,9 +401,9 @@ make clean
 
 2. **SPA Token Security**
 
-   - Default token is `PHANTOM_GRID_SPA_2025` (21 bytes)
-   - For production, modify `SPA_SECRET_TOKEN` in `bpf/phantom.c` and rebuild
-   - Keep token secret and rotate periodically
+- Default token is `PHANTOM_GRID_SPA_2025` (21 bytes)
+- For production, modify `SPA_SECRET_TOKEN` in `internal/ebpf/programs/phantom.c` and rebuild
+- Keep token secret and rotate periodically
 
 3. **Port Binding**
 
@@ -432,4 +459,4 @@ Built with:
 
 ---
 
-**⚠️ Disclaimer:** This tool is for authorized security testing and research purposes only. Use responsibly and in compliance with applicable laws and regulations.
+**WARNING:** This tool is for authorized security testing and research purposes only. Use responsibly and in compliance with applicable laws and regulations.

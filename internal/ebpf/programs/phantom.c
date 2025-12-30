@@ -281,20 +281,25 @@ int phantom_prog(struct xdp_md *ctx) {
         struct tcphdr *tcp = (void *)(ip + 1);
         if ((void *)(tcp + 1) > data_end) return XDP_PASS;
 
-        // Protect SSH port - only allow if whitelisted via SPA
-        if (tcp->dest == bpf_htons(SSH_PORT)) {
-            if (!is_spa_whitelisted(src_ip)) {
-                return XDP_DROP;
-            }
-            return XDP_PASS;
-        }
-
-        // Pass all packets to honeypot port (before stealth scan check)
+        // Pass all packets to honeypot port (before other checks)
         if (tcp->dest == bpf_htons(HONEYPOT_PORT)) {
             return XDP_PASS;
         }
 
-        // Pass fake ports directly (The Mirage)
+        // Protect ALL Critical Asset ports (Phantom Protocol) - only allow if whitelisted via SPA
+        // This includes: SSH (22), MySQL (3306), PostgreSQL (5432), MongoDB (27017), 
+        // Redis (6379), Admin Panels (8080, 8443, 9000)
+        // IMPORTANT: Check critical ports BEFORE fake ports to protect REAL services
+        // If a port is both critical AND fake, priority goes to protection (SPA required)
+        if (is_critical_asset_port(tcp->dest)) {
+            if (!is_spa_whitelisted(src_ip)) {
+                return XDP_DROP;  // Server appears "dead" to attackers
+            }
+            return XDP_PASS;  // Whitelisted IP can access
+        }
+
+        // Pass fake ports directly (The Mirage) - these are honeypot ports
+        // These ports are NOT critical assets, so they can be accessed without SPA
         if (is_fake_port(tcp->dest)) {
             __u32 key = 0;
             __u64 *val = bpf_map_lookup_elem(&attack_stats, &key);

@@ -1,4 +1,5 @@
-# Binaries
+# Binaries and build output
+bin/
 phantom-grid
 spa-client
 *.exe
@@ -19,14 +20,15 @@ vendor/
 # Go workspace file
 go.work
 
-# Generated eBPF files
-cmd/agent/phantom_bpf*.go
-cmd/agent/phantom_bpf*.o
-cmd/agent/egress_bpf*.go
-cmd/agent/egress_bpf*.o
+# Generated eBPF files (bpf2go output)
+internal/ebpf/phantom_bpf*.go
+internal/ebpf/phantom_bpf*.o
+internal/ebpf/egress_bpf*.go
+internal/ebpf/egress_bpf*.o
 
-# Logs
-logs/
+# Logs (keep directory structure)
+logs/*
+!logs/.gitkeep
 *.log
 
 # IDE

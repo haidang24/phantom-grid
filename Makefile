@@ -10,37 +10,43 @@ generate:
 	go generate ./...
 
 build: generate
-	cd cmd/agent && go build -o ../../phantom-grid .
-	cd cmd/spa-client && go build -o ../../spa-client .
+	@mkdir -p bin
+	cd cmd/agent && go build -o ../../bin/phantom-grid .
+	cd cmd/spa-client && go build -o ../../bin/spa-client .
+	@echo "Build complete: binaries in bin/"
 
 run: build
-	sudo ./phantom-grid
+	sudo ./bin/phantom-grid
 
 # Run with specific interface
 # Usage: make run-interface INTERFACE=ens33
 run-interface: build
-	sudo ./phantom-grid -interface $(INTERFACE)
+	sudo ./bin/phantom-grid -interface $(INTERFACE)
 
 clean:
+	rm -rf bin/
 	rm -f phantom-grid spa-client
-	rm -f cmd/agent/phantom_bpf*
-	rm -f cmd/agent/egress_bpf*
+	rm -f internal/ebpf/phantom_bpf*
+	rm -f internal/ebpf/egress_bpf*
+	rm -f coverage.out coverage.html
+	@echo "Clean complete"
 
 deps:
 	go mod tidy
 
+fmt:
+	gofmt -w ./cmd ./internal ./pkg
+
+lint:
+	go vet ./...
+
 test:
-	go test -v ./cmd/agent/...
-	go test -v ./cmd/spa-client/...
+	go test -v ./...
 
 test-coverage:
-	go test -v -coverprofile=coverage.out ./cmd/agent/...
-	go test -v -coverprofile=coverage-spa.out ./cmd/spa-client/...
+	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
-debug:
-	chmod +x debug_connection.sh
-	./debug_connection.sh
-
+.PHONY: all generate build run run-interface clean deps fmt lint test test-coverage
 
