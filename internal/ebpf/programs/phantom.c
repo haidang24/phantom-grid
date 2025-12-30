@@ -18,6 +18,7 @@
 #define SPA_MAGIC_PORT 1337
 #define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
 #define SPA_TOKEN_LEN 21
+#define SPA_WHITELIST_DURATION_NS (30ULL * 1000000000ULL) // 30 seconds in nanoseconds
 
 // Critical asset ports protected by Phantom Protocol (default: DROP all traffic)
 #define MYSQL_PORT 3306
@@ -145,7 +146,19 @@ static __always_inline void mutate_os_personality(struct iphdr *ip, struct tcphd
 
 static __always_inline int is_spa_whitelisted(__be32 src_ip) {
     __u64 *expiry = bpf_map_lookup_elem(&spa_whitelist, &src_ip);
-    return (expiry != NULL);
+    if (expiry == NULL) {
+        return 0;
+    }
+    
+    // Check if whitelist entry has expired
+    __u64 current_time = bpf_ktime_get_ns();
+    if (current_time > *expiry) {
+        // Entry expired, remove it
+        bpf_map_delete_elem(&spa_whitelist, &src_ip);
+        return 0;
+    }
+    
+    return 1;
 }
 
 // Helper: Check if port is a Critical Asset (protected by Phantom Protocol)
@@ -209,7 +222,10 @@ static __always_inline int verify_magic_packet(void *payload, void *data_end) {
 }
 
 static __always_inline void spa_whitelist_ip(__be32 src_ip) {
-    __u64 expiry = 0;
+    // Calculate expiry time: current time + duration
+    __u64 current_time = bpf_ktime_get_ns();
+    __u64 expiry = current_time + SPA_WHITELIST_DURATION_NS;
+    
     bpf_map_update_elem(&spa_whitelist, &src_ip, &expiry, BPF_ANY);
     
     __u32 key = 0;

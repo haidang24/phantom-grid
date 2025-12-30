@@ -59,30 +59,16 @@ func (h *Honeypot) Start() error {
 }
 
 func (h *Honeypot) bindFallback() error {
-	h.logChan <- "[SYSTEM] Attempting to bind honeypot fallback port 9999..."
+	h.logChan <- fmt.Sprintf("[SYSTEM] Attempting to bind honeypot fallback port %d...", config.HoneypotPort)
 	ln9999, err := net.Listen("tcp", fmt.Sprintf(":%d", config.HoneypotPort))
 	if err != nil {
 		h.logChan <- fmt.Sprintf("[ERROR] Cannot bind port %d: %v", config.HoneypotPort, err)
-		h.logChan <- fmt.Sprintf("[ERROR] Port %d is required for XDP redirect fallback!", config.HoneypotPort)
-		h.logChan <- "[ERROR] To free port 9999, run: sudo lsof -i :9999 && sudo kill -9 <PID>"
-		h.logChan <- "[ERROR] Or change HONEYPOT_PORT in internal/ebpf/programs/phantom.c and rebuild"
-
-		// Try alternative ports (WARNING: eBPF still redirects to port 9999)
-		// This is a fallback for testing only - production should ensure port 9999 is available
-		for _, altPort := range config.FallbackPorts {
-			fallbackListener, err := net.Listen("tcp", fmt.Sprintf(":%d", altPort))
-			if err == nil {
-				h.logChan <- fmt.Sprintf("[WARN] Using alternative fallback port %d instead of %d", altPort, config.HoneypotPort)
-				h.logChan <- fmt.Sprintf("[WARN] CRITICAL: XDP eBPF program redirects to port %d, but honeypot is bound to %d", config.HoneypotPort, altPort)
-				h.logChan <- fmt.Sprintf("[WARN] Redirected traffic will NOT reach honeypot! This is for testing only.")
-				h.logChan <- fmt.Sprintf("[WARN] For production: Ensure port %d is available or modify eBPF program", config.HoneypotPort)
-				h.listeners = append(h.listeners, fallbackListener)
-				h.wg.Add(1)
-				go h.acceptLoop(fallbackListener, altPort)
-				return nil
-			}
-		}
-		return fmt.Errorf("failed to bind honeypot fallback port %d (required for XDP redirect) and all alternatives", config.HoneypotPort)
+		h.logChan <- fmt.Sprintf("[ERROR] Port %d is REQUIRED for XDP redirect fallback!", config.HoneypotPort)
+		h.logChan <- fmt.Sprintf("[ERROR] The eBPF program (internal/ebpf/programs/phantom.c) hardcodes redirect to port %d", config.HoneypotPort)
+		h.logChan <- fmt.Sprintf("[ERROR] To free port %d, run: sudo lsof -i :%d && sudo kill -9 <PID>", config.HoneypotPort, config.HoneypotPort)
+		h.logChan <- fmt.Sprintf("[ERROR] Or change HONEYPOT_PORT in internal/ebpf/programs/phantom.c and rebuild")
+		h.logChan <- "[ERROR] FAILING FAST: Cannot use alternative ports due to eBPF hardcoded redirect"
+		return fmt.Errorf("failed to bind honeypot fallback port %d (required for XDP redirect): %w", config.HoneypotPort, err)
 	}
 
 	h.listeners = append(h.listeners, ln9999)

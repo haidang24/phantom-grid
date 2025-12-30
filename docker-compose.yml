@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  phantom-grid:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: phantom-grid:latest
+    container_name: phantom-grid
+    privileged: true  # Required for eBPF/XDP program loading
+    network_mode: host  # Required for XDP to attach to host network interfaces
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - INTERFACE=${INTERFACE:-}  # Optional: specify network interface
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - BPF
+    security_opt:
+      - apparmor:unconfined
+    # Note: XDP requires host network mode and privileged access
+    # This is necessary for eBPF program attachment to network interfaces
+

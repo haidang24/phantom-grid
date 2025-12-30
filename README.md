@@ -199,6 +199,82 @@ This will:
 
 ---
 
+## Docker Deployment
+
+### Prerequisites
+
+- Docker Engine 20.10+ with BuildKit support
+- Linux kernel 5.4+ on host (required for eBPF/XDP)
+- Host network access (XDP requires host network mode)
+
+### Build Docker Image
+
+```bash
+docker build -t phantom-grid:latest .
+```
+
+### Run with Docker Compose (Recommended)
+
+```bash
+# Build and run
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+### Run with Docker (Manual)
+
+```bash
+# Build image
+docker build -t phantom-grid:latest .
+
+# Run container (requires privileged mode and host network)
+docker run -d \
+  --name phantom-grid \
+  --privileged \
+  --network host \
+  -v $(pwd)/logs:/app/logs \
+  phantom-grid:latest
+
+# Or specify network interface
+docker run -d \
+  --name phantom-grid \
+  --privileged \
+  --network host \
+  -v $(pwd)/logs:/app/logs \
+  -e INTERFACE=eth0 \
+  phantom-grid:latest
+
+# View logs
+docker logs -f phantom-grid
+
+# Stop container
+docker stop phantom-grid
+docker rm phantom-grid
+```
+
+### Development Container
+
+For development with all tools:
+
+```bash
+docker build -f Dockerfile.dev -t phantom-grid:dev .
+docker run -it --privileged --network host -v $(pwd):/app phantom-grid:dev
+```
+
+**Important Notes:**
+
+- **Privileged Mode**: Required for eBPF program loading (`--privileged`)
+- **Host Network**: Required for XDP to attach to network interfaces (`--network host`)
+- **Capabilities**: Container needs `SYS_ADMIN`, `NET_ADMIN`, and `BPF` capabilities
+- **Kernel Version**: Host kernel must be 5.4+ for eBPF/XDP support
+
+---
+
 ## Usage
 
 ### Quick Start
@@ -378,6 +454,10 @@ Please read:
 - [`CHANGELOG.md`](CHANGELOG.md) – project version history
 
 For detailed technical documentation, see the [`docs/`](docs/) directory.
+
+### Docker Deployment
+
+See [`docs/DOCKER.md`](docs/DOCKER.md) for complete Docker deployment guide.
 
 ### Dashboard Controls
 

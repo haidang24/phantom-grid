@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+*.o
+*.a
+*.so
+*.exe
+*.dll
+*.dylib
+
+# Generated eBPF files (will be regenerated in container)
+internal/ebpf/phantom_bpf*.go
+internal/ebpf/phantom_bpf*.o
+internal/ebpf/egress_bpf*.go
+internal/ebpf/egress_bpf*.o
+
+# Test files
+*.test
+coverage.out
+coverage.html
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in container)
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Assets (not needed in container)
+assets/
+
+# Temporary files
+*.tmp
+*.temp

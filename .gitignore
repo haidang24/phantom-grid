@@ -50,3 +50,7 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Docker
+.dockerignore.bak
+docker-compose.override.yml
+

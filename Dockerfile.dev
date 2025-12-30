@@ -1,0 +1,35 @@
+# Development Dockerfile with all tools for development
+FROM golang:1.21-bullseye
+
+# Install eBPF build dependencies and development tools
+RUN apt-get update && apt-get install -y \
+    clang \
+    llvm \
+    libbpf-dev \
+    make \
+    git \
+    vim \
+    curl \
+    netcat \
+    tcpdump \
+    iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build binaries
+RUN make generate build
+
+# Expose ports (for testing)
+EXPOSE 9999 1337
+
+# Default to bash for development
+CMD ["/bin/bash"]
+
