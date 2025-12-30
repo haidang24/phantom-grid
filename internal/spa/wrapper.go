@@ -1,10 +1,22 @@
 package spa
 
+import "github.com/cilium/ebpf"
+
+// MapWrapper wraps ebpf.Map to implement the specific Lookup signature
+type MapWrapper struct {
+	Map *ebpf.Map
+}
+
+// Lookup implements the specific Lookup signature required by SPAStatsProvider
+func (w *MapWrapper) Lookup(key uint32, value *uint64) error {
+	return w.Map.Lookup(key, value)
+}
+
 // PhantomObjectsWrapper wraps PhantomObjects to implement SPAStatsProvider
 // This is a workaround since PhantomObjects is generated in cmd/agent
 type PhantomObjectsWrapper struct {
-	SpaAuthSuccessMap interface{ Lookup(key uint32, value *uint64) error }
-	SpaAuthFailedMap  interface{ Lookup(key uint32, value *uint64) error }
+	SpaAuthSuccessMap *MapWrapper
+	SpaAuthFailedMap  *MapWrapper
 }
 
 // GetSpaAuthSuccess returns the SPA auth success map
@@ -18,10 +30,10 @@ func (w *PhantomObjectsWrapper) GetSpaAuthFailed() interface{ Lookup(key uint32,
 }
 
 // NewWrapper creates a wrapper for PhantomObjects
-func NewWrapper(successMap, failedMap interface{ Lookup(key uint32, value *uint64) error }) SPAStatsProvider {
+func NewWrapper(successMap, failedMap *ebpf.Map) SPAStatsProvider {
 	return &PhantomObjectsWrapper{
-		SpaAuthSuccessMap: successMap,
-		SpaAuthFailedMap:  failedMap,
+		SpaAuthSuccessMap: &MapWrapper{Map: successMap},
+		SpaAuthFailedMap:  &MapWrapper{Map: failedMap},
 	}
 }
 
