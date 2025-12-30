@@ -8,11 +8,70 @@ const (
 	SPAWhitelistDuration = 30
 )
 
-// Network Configuration
-const (
-	HoneypotPort = 9999
-	SSHPort      = 22
-)
+// CriticalPorts are ports protected by Phantom Protocol (SPA required)
+// These ports will be DROPPED unless IP is whitelisted via SPA Magic Packet
+// To add more ports, update both this list AND is_critical_asset_port() in internal/ebpf/programs/phantom.c
+var CriticalPorts = []int{
+	22,    // SSH
+	3306,  // MySQL
+	5432,  // PostgreSQL
+	27017, // MongoDB
+	6379,  // Redis
+	8080,  // Admin Panel / HTTP Proxy
+	8443,  // HTTPS Admin Panel
+	9000,  // Admin Panel / Portainer
+	3389,  // RDP (Windows Remote Desktop)
+	1433,  // MSSQL Server
+	1521,  // Oracle Database
+	5433,  // PostgreSQL Alt
+	5985,  // WinRM HTTP
+	5986,  // WinRM HTTPS
+	2375,  // Docker (unencrypted)
+	2376,  // Docker (TLS)
+	5000,  // Docker Registry / Flask
+	27018, // MongoDB Shard
+	9200,  // Elasticsearch
+	5601,  // Kibana
+	3000,  // Node.js / Grafana
+	8000,  // Django / Jupyter
+	8888,  // Jupyter Notebook
+	9090,  // Prometheus
+	9091,  // Prometheus Pushgateway
+	15672, // RabbitMQ Management
+	8161,  // ActiveMQ Web Console
+	8162,  // ActiveMQ Web Console (HTTPS)
+	61616, // ActiveMQ
+	61617, // ActiveMQ (SSL)
+	2181,  // Zookeeper
+	7001,  // WebLogic
+	7002,  // WebLogic (SSL)
+	4848,  // GlassFish Admin
+	4849,  // GlassFish Admin (HTTPS)
+	9990,  // WildFly Admin
+	9993,  // WildFly Admin (HTTPS)
+	5984,  // CouchDB
+	2702,  // MS SQL Browser
+	1434,  // MS SQL Monitor
+	1527,  // Derby Database
+	50000, // DB2
+	50001, // DB2 (SSL)
+	1883,  // MQTT
+	8883,  // MQTT (SSL)
+	61613, // STOMP
+	61614, // STOMP (SSL)
+	5672,  // RabbitMQ AMQP
+	5671,  // RabbitMQ AMQP (SSL)
+	4369,  // Erlang Port Mapper
+	25672, // RabbitMQ Management (Erlang)
+	11211, // Memcached
+	11214, // Memcached (SSL)
+	389,   // LDAP
+	636,   // LDAP (SSL)
+	3268,  // LDAP Global Catalog
+	3269,  // LDAP Global Catalog (SSL)
+	2049,  // NFS
+	111,   // RPC Portmapper
+}
 
 // Fake ports for The Mirage (must match is_fake_port() in internal/ebpf/programs/phantom.c)
 var FakePorts = []int{

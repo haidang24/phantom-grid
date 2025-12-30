@@ -21,13 +21,77 @@
 #define SPA_WHITELIST_DURATION_NS (30ULL * 1000000000ULL) // 30 seconds in nanoseconds
 
 // Critical asset ports protected by Phantom Protocol (default: DROP all traffic)
+// IMPORTANT: When adding ports here, also update CriticalPorts in internal/config/config.go
+// and add the port check in is_critical_asset_port() function below
+// Databases
 #define MYSQL_PORT 3306
 #define POSTGRES_PORT 5432
+#define POSTGRES_ALT_PORT 5433
 #define MONGODB_PORT 27017
+#define MONGODB_SHARD_PORT 27018
 #define REDIS_PORT 6379
+#define MSSQL_PORT 1433
+#define MSSQL_BROWSER_PORT 2702
+#define MSSQL_MONITOR_PORT 1434
+#define ORACLE_PORT 1521
+#define DERBY_PORT 1527
+#define DB2_PORT 50000
+#define DB2_SSL_PORT 50001
+// Admin Panels & Management
 #define ADMIN_PANEL_PORT_1 8080
 #define ADMIN_PANEL_PORT_2 8443
 #define ADMIN_PANEL_PORT_3 9000
+#define ELASTICSEARCH_PORT 9200
+#define KIBANA_PORT 5601
+#define GRAFANA_PORT 3000
+#define PROMETHEUS_PORT 9090
+#define PROMETHEUS_PUSH_PORT 9091
+#define RABBITMQ_MGMT_PORT 15672
+#define RABBITMQ_MGMT_ERLANG_PORT 25672
+#define COUCHDB_PORT 5984
+#define ACTIVEMQ_WEB_PORT 8161
+#define ACTIVEMQ_WEB_SSL_PORT 8162
+#define ACTIVEMQ_PORT 61616
+#define ACTIVEMQ_SSL_PORT 61617
+#define ZOOKEEPER_PORT 2181
+#define WEBLOGIC_PORT 7001
+#define WEBLOGIC_SSL_PORT 7002
+#define GLASSFISH_ADMIN_PORT 4848
+#define GLASSFISH_ADMIN_SSL_PORT 4849
+#define WILDFLY_ADMIN_PORT 9990
+#define WILDFLY_ADMIN_SSL_PORT 9993
+// Remote Access
+#define RDP_PORT 3389
+#define WINRM_HTTP_PORT 5985
+#define WINRM_HTTPS_PORT 5986
+// Container Services
+#define DOCKER_PORT 2375
+#define DOCKER_TLS_PORT 2376
+#define DOCKER_REGISTRY_PORT 5000
+// Application Frameworks
+#define NODEJS_PORT 3000
+#define FLASK_PORT 5000
+#define DJANGO_PORT 8000
+#define JUPYTER_PORT 8888
+// Directory Services
+#define LDAP_PORT 389
+#define LDAP_SSL_PORT 636
+#define LDAP_GC_PORT 3268
+#define LDAP_GC_SSL_PORT 3269
+// Cache Services
+#define MEMCACHED_PORT 11211
+#define MEMCACHED_SSL_PORT 11214
+// File Services
+#define NFS_PORT 2049
+#define RPC_PORTMAPPER_PORT 111
+// Messaging Protocols
+#define MQTT_PORT 1883
+#define MQTT_SSL_PORT 8883
+#define STOMP_PORT 61613
+#define STOMP_SSL_PORT 61614
+#define RABBITMQ_AMQP_PORT 5672
+#define RABBITMQ_AMQP_SSL_PORT 5671
+#define ERLANG_PORTMAPPER_PORT 4369
 
 #ifndef IPPROTO_TCP
 #define IPPROTO_TCP 6
@@ -150,16 +214,54 @@ static __always_inline int is_spa_whitelisted(__be32 src_ip) {
 }
 
 // Helper: Check if port is a Critical Asset (protected by Phantom Protocol)
+// This function checks if a port requires SPA authentication before allowing access
+// IMPORTANT: Keep this list synchronized with CriticalPorts in internal/config/config.go
+// Ports are grouped by category for better performance and maintainability
 static __always_inline int is_critical_asset_port(__be16 port) {
     __u16 p = bpf_ntohs(port);
-    return (p == SSH_PORT || 
-            p == MYSQL_PORT || 
-            p == POSTGRES_PORT || 
-            p == MONGODB_PORT || 
-            p == REDIS_PORT || 
-            p == ADMIN_PANEL_PORT_1 || 
-            p == ADMIN_PANEL_PORT_2 || 
-            p == ADMIN_PANEL_PORT_3);
+    
+    // Core services
+    if (p == SSH_PORT) return 1;
+    
+    // Databases (most common, check first)
+    if (p == MYSQL_PORT || p == POSTGRES_PORT || p == POSTGRES_ALT_PORT || 
+        p == MONGODB_PORT || p == MONGODB_SHARD_PORT || p == REDIS_PORT || 
+        p == MSSQL_PORT || p == MSSQL_BROWSER_PORT || p == MSSQL_MONITOR_PORT ||
+        p == ORACLE_PORT || p == DERBY_PORT || p == DB2_PORT || p == DB2_SSL_PORT) return 1;
+    
+    // Admin panels and management interfaces
+    if (p == ADMIN_PANEL_PORT_1 || p == ADMIN_PANEL_PORT_2 || p == ADMIN_PANEL_PORT_3 ||
+        p == ELASTICSEARCH_PORT || p == KIBANA_PORT || p == GRAFANA_PORT || 
+        p == PROMETHEUS_PORT || p == PROMETHEUS_PUSH_PORT || p == RABBITMQ_MGMT_PORT ||
+        p == RABBITMQ_MGMT_ERLANG_PORT || p == COUCHDB_PORT || p == ACTIVEMQ_WEB_PORT ||
+        p == ACTIVEMQ_WEB_SSL_PORT || p == ACTIVEMQ_PORT || p == ACTIVEMQ_SSL_PORT ||
+        p == ZOOKEEPER_PORT || p == WEBLOGIC_PORT || p == WEBLOGIC_SSL_PORT ||
+        p == GLASSFISH_ADMIN_PORT || p == GLASSFISH_ADMIN_SSL_PORT ||
+        p == WILDFLY_ADMIN_PORT || p == WILDFLY_ADMIN_SSL_PORT) return 1;
+    
+    // Remote access
+    if (p == RDP_PORT || p == WINRM_HTTP_PORT || p == WINRM_HTTPS_PORT) return 1;
+    
+    // Container/Docker services
+    if (p == DOCKER_PORT || p == DOCKER_TLS_PORT || p == DOCKER_REGISTRY_PORT) return 1;
+    
+    // Application frameworks (if used for admin interfaces)
+    if (p == NODEJS_PORT || p == FLASK_PORT || p == DJANGO_PORT || p == JUPYTER_PORT) return 1;
+    
+    // Directory services
+    if (p == LDAP_PORT || p == LDAP_SSL_PORT || p == LDAP_GC_PORT || p == LDAP_GC_SSL_PORT) return 1;
+    
+    // Cache services
+    if (p == MEMCACHED_PORT || p == MEMCACHED_SSL_PORT) return 1;
+    
+    // File services
+    if (p == NFS_PORT || p == RPC_PORTMAPPER_PORT) return 1;
+    
+    // Messaging protocols
+    if (p == MQTT_PORT || p == MQTT_SSL_PORT || p == STOMP_PORT || p == STOMP_SSL_PORT ||
+        p == RABBITMQ_AMQP_PORT || p == RABBITMQ_AMQP_SSL_PORT || p == ERLANG_PORTMAPPER_PORT) return 1;
+    
+    return 0;
 }
 
 // Check if port is a fake port (The Mirage - honeypot will bind these ports)

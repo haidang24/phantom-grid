@@ -496,6 +496,15 @@ Please read:
 
 For detailed technical documentation, see the [`docs/`](docs/) directory.
 
+### Configuring Protected Ports
+
+See [`docs/CONFIGURING_PORTS.md`](docs/CONFIGURING_PORTS.md) for:
+
+- List of currently protected ports
+- How to add new ports to protection
+- Port configuration best practices
+- Troubleshooting guide
+
 ### Docker Deployment
 
 See [`docs/DOCKER.md`](docs/DOCKER.md) for complete Docker deployment guide.
