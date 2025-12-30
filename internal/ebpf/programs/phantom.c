@@ -100,18 +100,6 @@ struct {
     __type(value, __be16);
 } redirect_map SEC(".maps");
 
-// Manual checksum update for 16-bit values
-static __always_inline void update_csum16(__u16 *csum, __be16 old_val, __be16 new_val) {
-    __u32 sum = (~(*csum) & 0xffff);
-    // Convert to host byte order for arithmetic, then back
-    __u16 old = bpf_ntohs(old_val);
-    __u16 new = bpf_ntohs(new_val);
-    sum += (~old & 0xffff);
-    sum += (new & 0xffff);
-    sum = (sum & 0xffff) + (sum >> 16);
-    *csum = ~((sum & 0xffff) + (sum >> 16));
-}
-
 static __always_inline void mutate_os_personality(struct iphdr *ip, struct tcphdr *tcp) {
     __u16 src_port = bpf_ntohs(tcp->source);
     __u8 os_type = (src_port % 4);
