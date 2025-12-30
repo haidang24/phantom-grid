@@ -1,29 +1,37 @@
-# Phantom Grid – eBPF-Powered Active Defense Platform
+# Phantom Grid
 
 > "The best defense is not just blocking – it is confusing, deceiving, and recording."
 
 **Phantom Grid** is a kernel-level active defense system built on **eBPF (Extended Berkeley Packet Filter)** that transforms a standard Linux server into a controlled, deceptive attack surface. It provides enterprise-grade security through deception, zero-trust access control, and real-time threat intelligence.
 
-![Phantom Grid Dashboard](assets/dashboard.png)
-
-_Real-time forensics dashboard showing live attack detection, connection statistics, and system metrics_
-
----
-
 ## Table of Contents
 
+- [Overview](#overview)
 - [Features](#features)
 - [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
 - [Usage](#usage)
+- [Configuration](#configuration)
 - [Testing](#testing)
 - [Development](#development)
+- [Docker Deployment](#docker-deployment)
+- [Troubleshooting](#troubleshooting)
 - [Security Considerations](#security-considerations)
+- [Contributing](#contributing)
 - [License](#license)
 - [Author](#author)
 
----
+## Overview
+
+Phantom Grid implements three core defense mechanisms:
+
+1. **The Phantom Protocol** - Makes critical services invisible by default, requiring Single Packet Authorization (SPA) for access
+2. **The Mirage** - Presents randomized fake services to confuse reconnaissance tools
+3. **The Portal** - Transparently redirects suspicious traffic to honeypots for analysis
+
+All traffic processing happens in kernel space using eBPF/XDP for wire-speed performance with minimal overhead.
 
 ## Features
 
@@ -154,23 +162,103 @@ The TC (Traffic Control) eBPF program monitors outbound traffic for data exfiltr
 
 ---
 
-## Getting Started
+## Requirements
 
-### Prerequisites
+### System Requirements
 
-- Linux kernel 5.4+ (Ubuntu 20.04/22.04 recommended)
-- `clang`, `llvm`, `libbpf-dev` (eBPF build toolchain)
-- Go 1.21 or later
-- Root privileges (required for eBPF program loading)
+- **Operating System**: Linux (Ubuntu 20.04/22.04, Debian 11+, CentOS 8+, or similar)
+- **Kernel Version**: Linux kernel 5.4 or later (required for eBPF/XDP support)
+- **Architecture**: x86_64 or ARM64
+- **Privileges**: Root/sudo access (required for eBPF program loading)
 
-**Install dependencies (Ubuntu/Debian):**
+### Build Dependencies
+
+- **Go**: Version 1.21 or later
+- **C Compiler**: `clang` (version 10+)
+- **LLVM**: `llvm` (version 10+)
+- **eBPF Libraries**: `libbpf-dev`
+- **Build Tools**: `make`, `git`
+
+### Install Dependencies
+
+**Ubuntu/Debian:**
 
 ```bash
 sudo apt update
-sudo apt install -y clang llvm libbpf-dev golang make git
+sudo apt install -y clang llvm libbpf-dev golang-go make git
 ```
 
-### Installation
+**CentOS/RHEL:**
+
+```bash
+sudo yum install -y clang llvm libbpf-devel golang make git
+```
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S clang llvm libbpf go make git
+```
+
+## Quick Start
+
+### Step 1: Clone Repository
+
+```bash
+git clone https://github.com/YOUR_USERNAME/phantom-grid.git
+cd phantom-grid
+```
+
+### Step 2: Install Go Dependencies
+
+```bash
+go mod tidy
+```
+
+### Step 3: Build Project
+
+```bash
+make build
+```
+
+This compiles eBPF programs and builds binaries:
+
+- `bin/phantom-grid` - Main agent
+- `bin/spa-client` - SPA authentication client
+
+### Step 4: Run Phantom Grid
+
+**Option A: Auto-detect network interface (testing only):**
+
+```bash
+sudo make run
+```
+
+**Option B: Specify network interface (recommended for production):**
+
+```bash
+# List available interfaces
+ip link show
+
+# Run with specific interface
+make run-interface INTERFACE=ens33
+# or
+sudo ./bin/phantom-grid -interface ens33
+```
+
+### Step 5: Authenticate with SPA
+
+From another machine, send Magic Packet to whitelist your IP:
+
+```bash
+./bin/spa-client SERVER_IP
+```
+
+You now have 30 seconds to access protected services (e.g., SSH).
+
+## Installation
+
+### From Source
 
 1. **Clone the repository:**
 
@@ -179,23 +267,55 @@ git clone https://github.com/YOUR_USERNAME/phantom-grid.git
 cd phantom-grid
 ```
 
-2. **Install Go dependencies:**
+2. **Install dependencies:**
 
 ```bash
+# Install system dependencies (see Requirements section)
+sudo apt install -y clang llvm libbpf-dev golang-go make git
+
+# Install Go module dependencies
 go mod tidy
 ```
 
-3. **Build the project:**
+3. **Build:**
 
 ```bash
 make build
 ```
 
-This will:
+Binaries will be in `bin/` directory:
 
-- Compile eBPF programs via `bpf2go`
-- Build the main agent binary (`phantom-grid`)
-- Build the SPA client tool (`spa-client`)
+- `bin/phantom-grid` - Main agent binary
+- `bin/spa-client` - SPA client tool
+
+4. **Verify installation:**
+
+```bash
+./bin/phantom-grid -h
+./bin/spa-client -h
+```
+
+### Build Options
+
+```bash
+# Build everything (default)
+make build
+
+# Clean build artifacts
+make clean
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Format code
+make fmt
+
+# Lint code
+make lint
+```
 
 ---
 
@@ -277,112 +397,212 @@ docker run -it --privileged --network host -v $(pwd):/app phantom-grid:dev
 
 ## Usage
 
-### Quick Start
+### Running Phantom Grid
 
-#### Option 1: Auto-detect Network Interface (Testing Only)
-
-Chương trình sẽ tự động tìm card mạng:
+#### Basic Usage
 
 ```bash
-sudo make run
-# hoặc
+# Show help
+sudo ./bin/phantom-grid -h
+
+# Run with auto-detected interface (testing only)
 sudo ./bin/phantom-grid
+
+# Run with specific network interface (recommended)
+sudo ./bin/phantom-grid -interface INTERFACE_NAME
 ```
 
-**Thứ tự auto-detect:**
+#### Network Interface Selection
 
-1. WiFi interfaces (wlx*, wlan*, wlp\*)
-2. Common interfaces: ens33, eth0, enp0s3, enp0s8, enp0s9, eth1
-3. Fallback: loopback (lo) - **chỉ dùng cho testing local**
-
-> **Warning:** Auto-detect có thể chọn sai interface hoặc fallback về loopback. **Không dùng cho production!**
-
-#### Option 2: Specify Network Interface (Recommended for Production)
-
-**Bước 1: Xem danh sách card mạng có sẵn:**
+**Step 1: List available network interfaces:**
 
 ```bash
 ip link show
-# hoặc
+# or
 ifconfig -a
 ```
 
-**Bước 2: Chạy với card mạng cụ thể:**
+**Step 2: Identify external interface:**
+
+The external interface is the one with a non-loopback IP address (not 127.0.0.1).
 
 ```bash
-# Cách 1: Dùng Makefile (khuyến nghị)
-make run-interface INTERFACE=ens33
-
-# Cách 2: Chạy trực tiếp binary
-sudo ./bin/phantom-grid -interface ens33
-
-# Ví dụ với các card mạng khác:
-sudo ./bin/phantom-grid -interface eth0      # Ethernet card
-sudo ./bin/phantom-grid -interface wlan0      # WiFi card
-sudo ./bin/phantom-grid -interface enp0s3     # USB Ethernet
-```
-
-**Làm sao biết chọn card mạng nào?**
-
-- **VMware/VirtualBox:** Thường là `ens33`, `enp0s3`, hoặc `eth0`
-- **Physical server:** Thường là `eth0`, `eth1`, hoặc `enp*s*`
-- **WiFi:** Thường là `wlan0`, `wlx*`, hoặc `wlp*`
-- **Kiểm tra IP:** Card mạng có IP address (không phải 127.0.0.1) là card external
-
-**Ví dụ kiểm tra:**
-
-```bash
-# Xem card mạng và IP của chúng
+# Show interfaces with IP addresses
 ip addr show
 
-# Tìm card có IP external (không phải loopback)
+# Find external interface (exclude loopback)
 ip addr show | grep -E "^[0-9]+:|inet " | grep -v "127.0.0.1"
 ```
 
-> **Important:** Luôn chỉ định card mạng external bằng `-interface` flag cho production. Auto-detect có thể chọn sai và không capture được traffic từ bên ngoài.
+**Common interface names:**
 
-### SPA Authentication
+- **VMware/VirtualBox**: `ens33`, `enp0s3`, `eth0`
+- **Physical servers**: `eth0`, `eth1`, `enp*s*`
+- **WiFi**: `wlan0`, `wlx*`, `wlp*`
+- **USB Ethernet**: `enp0s3`, `enx*`
 
-1. **Verify server is invisible (attacker perspective):**
+**Step 3: Run with selected interface:**
 
 ```bash
-# Ping - no response (ICMP is allowed, but SSH is protected)
-ping PHANTOM_IP
+# Using Makefile
+make run-interface INTERFACE=ens33
 
-# Port scan - SSH port appears closed
-nmap -p 22 PHANTOM_IP
+# Direct binary execution
+sudo ./bin/phantom-grid -interface ens33
+sudo ./bin/phantom-grid -interface eth0
+sudo ./bin/phantom-grid -interface wlan0
+```
+
+**Important Notes:**
+
+- Always specify the external interface for production deployments
+- Auto-detection may select the wrong interface or fallback to loopback
+- Loopback interface (lo) only works for local testing
+- XDP programs attached to external interfaces do not process localhost traffic
+
+### Single Packet Authorization (SPA)
+
+Phantom Grid uses SPA for zero-trust access control. Protected ports are invisible by default and require authentication via Magic Packet.
+
+#### Step 1: Verify Server is Invisible
+
+From an external machine (attacker perspective):
+
+```bash
+# Ping test (ICMP allowed, but SSH protected)
+ping SERVER_IP
+
+# Port scan - protected ports appear closed
+nmap -p 22 SERVER_IP
 # Result: Port 22 is filtered/closed - server appears "dead"
 ```
 
-2. **Send Magic Packet (admin):**
+#### Step 2: Send Magic Packet
+
+From an authorized machine, send the Magic Packet:
 
 ```bash
-./spa-client PHANTOM_IP
+./bin/spa-client SERVER_IP
 ```
 
-Output:
+Expected output:
 
 ```
-[*] Sending Magic Packet to PHANTOM_IP:1337...
+[*] Sending Magic Packet to SERVER_IP:1337...
 [+] Magic Packet sent successfully!
 [+] Your IP has been whitelisted for 30 seconds
-[+] You can now SSH to the server:
-    ssh user@PHANTOM_IP
+[+] You can now access protected services:
+    ssh user@SERVER_IP
 ```
 
-3. **Access SSH (whitelisted IP):**
+#### Step 3: Access Protected Services
+
+Within 30 seconds of sending Magic Packet:
 
 ```bash
-ssh user@PHANTOM_IP
+# SSH access (now allowed)
+ssh user@SERVER_IP
+
+# Other protected services (databases, admin panels, etc.)
+mysql -h SERVER_IP -u user -p
 ```
 
-4. **Monitor in dashboard:**
+#### Step 4: Monitor Dashboard
 
-- Watch for `[SPA] Successful authentication` messages
-- Server remains invisible to non-whitelisted IPs
-- Whitelist expires automatically after 30 seconds (LRU map auto-eviction)
+The Phantom Grid dashboard shows:
 
----
+- SPA authentication success/failure messages
+- Whitelisted IP addresses
+- Active connections to protected ports
+- Whitelist expiry (automatic after 30 seconds)
+
+**Important:**
+
+- Whitelist expires after 30 seconds
+- Each IP must authenticate separately
+- Default SPA token: `PHANTOM_GRID_SPA_2025` (change for production)
+
+### Command Line Options
+
+```bash
+Usage: ./bin/phantom-grid [OPTIONS]
+
+Options:
+  -interface string    Network interface name (required for production)
+                       If not specified, auto-detection will be attempted
+  -h, -help           Show help message
+```
+
+### Dashboard Controls
+
+When Phantom Grid is running, the terminal dashboard supports:
+
+- `j` / `k` - Scroll down/up in log panel
+- `g` / `G` - Scroll to top/bottom
+- `a` - Toggle auto-scroll
+- `SPACE` - Pause/resume log scrolling
+- `q` / `Ctrl+C` - Exit application
+
+### Stopping Phantom Grid
+
+```bash
+# If running in foreground: Press Ctrl+C
+
+# If running in background: Find PID and kill
+ps aux | grep phantom-grid
+sudo kill <PID>
+
+# Or use pkill
+sudo pkill phantom-grid
+```
+
+**Note:** XDP programs are automatically detached when the application exits gracefully.
+
+## Configuration
+
+### Protected Ports
+
+Phantom Grid protects 60+ critical ports by default, including:
+
+- **SSH**: 22
+- **Databases**: 3306 (MySQL), 5432 (PostgreSQL), 27017 (MongoDB), 6379 (Redis), 1433 (MSSQL), 1521 (Oracle)
+- **Admin Panels**: 8080, 8443, 9000, 9200 (Elasticsearch), 5601 (Kibana), 3000 (Grafana)
+- **Remote Access**: 3389 (RDP), 5985/5986 (WinRM)
+- **Container Services**: 2375/2376 (Docker)
+- **Directory Services**: 389/636 (LDAP)
+- **And many more...**
+
+See [`docs/CONFIGURING_PORTS.md`](docs/CONFIGURING_PORTS.md) for:
+
+- Complete list of protected ports
+- How to add new ports
+- Port configuration best practices
+- Troubleshooting guide
+
+### SPA Token Configuration
+
+**Default token:** `PHANTOM_GRID_SPA_2025` (21 bytes)
+
+**For production:** Change the token in `internal/ebpf/programs/phantom.c`:
+
+```c
+#define SPA_SECRET_TOKEN "YOUR_SECRET_TOKEN_HERE"
+#define SPA_TOKEN_LEN 21  // Update if token length changes
+```
+
+Then rebuild:
+
+```bash
+make clean
+make build
+```
+
+**Security Best Practices:**
+
+- Use a strong, random token (21+ bytes recommended)
+- Rotate tokens periodically
+- Keep tokens secret (never commit to version control)
+- Use different tokens for different environments
 
 ## Testing
 
@@ -417,6 +637,41 @@ Expected: Randomized service banner (SSH, HTTP, MySQL, Redis, FTP, or Telnet)
 - Watch real-time logs of connections and commands
 - Check statistics for redirected connections, stealth drops, OS mutations
 
+### Basic Functionality Test
+
+**1. Port Scan Test:**
+
+From an external machine:
+
+```bash
+nmap -p- SERVER_IP
+```
+
+Expected: Multiple fake ports appear open (80, 443, 3306, 5432, etc.)
+
+**2. Fake Port Connection Test:**
+
+```bash
+# Connect to fake MySQL port
+nc SERVER_IP 3306
+
+# Expected: Randomized service banner (SSH, HTTP, MySQL, Redis, FTP, or Telnet)
+```
+
+**3. Service Interaction Test:**
+
+- **SSH honeypot**: Try commands (`whoami`, `ls`, `pwd`, `exit`)
+- **HTTP honeypot**: Send request (`GET / HTTP/1.1\r\nHost: example.com\r\n\r\n`)
+- **MySQL honeypot**: Attempt authentication
+- **Redis honeypot**: Send commands (`PING`, `INFO`)
+- **FTP honeypot**: Send commands (`USER test`, `PASS test`)
+
+**4. Dashboard Monitoring:**
+
+- Watch real-time logs of connections and commands
+- Check statistics for redirected connections, stealth drops, OS mutations
+- Verify SPA authentication events
+
 ### Unit Tests
 
 ```bash
@@ -425,9 +680,30 @@ make test
 
 # Run tests with coverage
 make test-coverage
+
+# View coverage report
+open coverage.html  # macOS
+xdg-open coverage.html  # Linux
 ```
 
----
+### Integration Testing
+
+**Test SPA Authentication Flow:**
+
+```bash
+# Terminal 1: Run Phantom Grid
+sudo ./bin/phantom-grid -interface ens33
+
+# Terminal 2: Test from external machine
+# 1. Verify SSH is blocked
+ssh user@SERVER_IP  # Should timeout
+
+# 2. Send Magic Packet
+./bin/spa-client SERVER_IP
+
+# 3. SSH should now work (within 30 seconds)
+ssh user@SERVER_IP  # Should connect
+```
 
 ## Development
 
@@ -484,44 +760,248 @@ make build
 make clean
 ```
 
-### Contributing
+### Development Setup
 
-Contributions are welcome!  
-Please read:
+**1. Clone and setup:**
+
+```bash
+git clone https://github.com/YOUR_USERNAME/phantom-grid.git
+cd phantom-grid
+go mod tidy
+```
+
+**2. Development workflow:**
+
+```bash
+# Format code
+make fmt
+
+# Lint code
+make lint
+
+# Run tests
+make test
+
+# Build
+make build
+```
+
+**3. Regenerating eBPF Bindings:**
+
+If you modify eBPF C programs, regenerate Go bindings:
+
+```bash
+go generate ./...
+# or
+make generate
+```
+
+**4. Building:**
+
+```bash
+# Build all binaries
+make build
+
+# Clean build artifacts
+make clean
+```
+
+### Project Structure
+
+```
+phantom-grid/
+├── cmd/
+│   ├── agent/             # Main Phantom Grid agent
+│   │   └── main.go
+│   └── spa-client/        # SPA client CLI tool
+│       └── main.go
+├── internal/
+│   ├── agent/             # Agent core logic
+│   ├── config/            # Configuration and constants
+│   ├── dashboard/         # Terminal UI dashboard
+│   ├── ebpf/
+│   │   ├── loader.go      # eBPF loader and bindings
+│   │   └── programs/      # eBPF C programs
+│   │       ├── phantom.c          # XDP program (ingress)
+│   │       ├── phantom_egress.c   # TC program (egress DLP)
+│   │       └── phantom_spa.c      # SPA module
+│   ├── honeypot/          # Honeypot implementation
+│   ├── logger/            # Logging utilities
+│   ├── mirage/            # Fake service banners
+│   ├── network/           # Network interface detection
+│   └── spa/               # SPA manager
+├── pkg/
+│   └── spa/               # Reusable SPA client package
+├── assets/                # Static assets (images, etc.)
+├── docs/                  # Technical documentation
+├── logs/                  # Runtime logs (gitignored)
+├── bin/                   # Build output (gitignored)
+├── Makefile
+├── go.mod
+└── README.md
+```
+
+## Docker Deployment
+
+### Quick Start with Docker Compose
+
+```bash
+# Build and run
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+### Manual Docker Deployment
+
+```bash
+# Build image
+docker build -t phantom-grid:latest .
+
+# Run container
+docker run -d \
+  --name phantom-grid \
+  --privileged \
+  --network host \
+  -v $(pwd)/logs:/app/logs \
+  -e INTERFACE=eth0 \
+  phantom-grid:latest
+
+# View logs
+docker logs -f phantom-grid
+
+# Stop container
+docker stop phantom-grid
+docker rm phantom-grid
+```
+
+### Development Container
+
+```bash
+docker build -f Dockerfile.dev -t phantom-grid:dev .
+docker run -it --privileged --network host -v $(pwd):/app phantom-grid:dev
+```
+
+**Important Notes:**
+
+- **Privileged Mode**: Required for eBPF program loading (`--privileged`)
+- **Host Network**: Required for XDP to attach to network interfaces (`--network host`)
+- **Kernel Version**: Host kernel must be 5.4+ for eBPF/XDP support
+
+For complete Docker documentation, see [`docs/DOCKER.md`](docs/DOCKER.md).
+
+## Troubleshooting
+
+### Common Issues
+
+**1. XDP attach failed: "device or resource busy"**
+
+Another XDP program is already attached to the interface.
+
+**Solution:**
+
+```bash
+# Detach existing XDP program
+sudo ip link set dev INTERFACE_NAME xdp off
+
+# Then retry
+sudo ./bin/phantom-grid -interface INTERFACE_NAME
+```
+
+**2. Port 9999 already in use**
+
+The honeypot fallback port is required and must be available.
+
+**Solution:**
+
+```bash
+# Find process using port 9999
+sudo lsof -i :9999
+
+# Kill the process
+sudo kill -9 <PID>
+
+# Or change HONEYPOT_PORT in internal/ebpf/programs/phantom.c and rebuild
+```
+
+**3. eBPF program load failed: "permission denied"**
+
+Missing required capabilities or running without root.
+
+**Solution:**
+
+```bash
+# Run with sudo
+sudo ./bin/phantom-grid -interface INTERFACE_NAME
+
+# Or ensure user has CAP_BPF, CAP_SYS_ADMIN capabilities
+```
+
+**4. Interface not found**
+
+The specified network interface does not exist.
+
+**Solution:**
+
+```bash
+# List available interfaces
+ip link show
+
+# Use correct interface name
+sudo ./bin/phantom-grid -interface <CORRECT_INTERFACE_NAME>
+```
+
+**5. TC Egress DLP disabled warning**
+
+TC egress program failed to load (non-critical).
+
+**Solution:**
+
+This is a warning, not an error. Main XDP protection is still active. TC egress DLP requires specific kernel features and may not be available on all systems.
+
+**6. SPA authentication not working**
+
+**Checklist:**
+
+- Verify SPA token matches in both client and server
+- Check that UDP port 1337 is not blocked by firewall
+- Ensure source IP is correct
+- Verify whitelist hasn't expired (30 seconds)
+
+**7. Protected ports still accessible**
+
+**Checklist:**
+
+- Verify XDP program is attached: `ip link show INTERFACE_NAME`
+- Check that eBPF program loaded successfully (check logs)
+- Ensure traffic is coming from external IP (not localhost)
+- Verify port is in protected ports list
+
+### Getting Help
+
+- Check [`docs/`](docs/) directory for detailed documentation
+- Review [`CONTRIBUTING.md`](CONTRIBUTING.md) for development guidelines
+- Report issues via GitHub Issues
+- For security issues, see [`SECURITY.md`](SECURITY.md)
+
+## Contributing
+
+Contributions are welcome! Please read:
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) – development workflow, coding style, and PR checklist
-- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) – rules for respectful, professional collaboration
 - [`SECURITY.md`](SECURITY.md) – how to report vulnerabilities responsibly
-- [`CHANGELOG.md`](CHANGELOG.md) – project version history
 
 For detailed technical documentation, see the [`docs/`](docs/) directory.
-
-### Configuring Protected Ports
-
-See [`docs/CONFIGURING_PORTS.md`](docs/CONFIGURING_PORTS.md) for:
-
-- List of currently protected ports
-- How to add new ports to protection
-- Port configuration best practices
-- Troubleshooting guide
-
-### Docker Deployment
-
-See [`docs/DOCKER.md`](docs/DOCKER.md) for complete Docker deployment guide.
-
-### Dashboard Controls
-
-- `j` / `k`: Scroll down/up in log panel
-- `g` / `G`: Scroll to top/bottom
-- `a`: Toggle auto-scroll
-- `SPACE`: Pause/resume log scrolling
-- `q` / `Ctrl+C`: Exit
 
 ---
 
 ## Security Considerations
 
-### Production Deployment
+### Production Deployment Checklist
 
 1. **Network Interface Selection**
 
@@ -531,9 +1011,10 @@ See [`docs/DOCKER.md`](docs/DOCKER.md) for complete Docker deployment guide.
 
 2. **SPA Token Security**
 
-- Default token is `PHANTOM_GRID_SPA_2025` (21 bytes)
-- For production, modify `SPA_SECRET_TOKEN` in `internal/ebpf/programs/phantom.c` and rebuild
-- Keep token secret and rotate periodically
+   - Change default token (`PHANTOM_GRID_SPA_2025`) before production
+   - Use strong, random token (21+ bytes recommended)
+   - Keep token secret (never commit to version control)
+   - Rotate tokens periodically
 
 3. **Port Binding**
 
@@ -557,12 +1038,24 @@ See [`docs/DOCKER.md`](docs/DOCKER.md) for complete Docker deployment guide.
    - All attacker interactions logged to `logs/audit.json`
    - Implement log rotation for production
    - Consider integration with SIEM platforms
+   - Review logs regularly for security events
+
+### Security Best Practices
+
+- **Change Default SPA Token**: Never use default token in production
+- **Monitor Dashboard**: Regularly check for suspicious activity
+- **Log Management**: Implement log rotation and archival
+- **Network Segmentation**: Deploy on isolated network segments when possible
+- **Regular Updates**: Keep system and dependencies updated
+- **Access Control**: Limit who can send SPA Magic Packets
+- **Audit Trail**: Maintain audit logs for compliance
 
 ### Limitations
 
 - XDP programs attached to external interfaces do not process localhost traffic
 - TC Egress DLP may require specific netlink APIs (gracefully degrades if unavailable)
-- SPA whitelist expiry is handled by LRU map auto-eviction (30 seconds approximate)
+- SPA whitelist expiry uses precise TTL (30 seconds exact)
+- Some network drivers may not support native XDP (falls back to Generic mode)
 
 ---
 
@@ -572,13 +1065,15 @@ This project is released under the MIT License. See `LICENSE` for details.
 
 ---
 
+## License
+
+This project is released under the MIT License. See [`LICENSE`](LICENSE) for details.
+
 ## Author
 
 **Mai Hai Dang – HD24SecurityLabs**
 
 Focus areas: system programming, eBPF, and active defense.
-
----
 
 ## Acknowledgments
 
@@ -587,6 +1082,6 @@ Built with:
 - [Cilium eBPF](https://github.com/cilium/ebpf) - eBPF library for Go
 - [TermUI](https://github.com/gizak/termui) - Terminal dashboard library
 
----
+## Disclaimer
 
-**WARNING:** This tool is for authorized security testing and research purposes only. Use responsibly and in compliance with applicable laws and regulations.
+**WARNING:** This tool is for authorized security testing and research purposes only. Use responsibly and in compliance with applicable laws and regulations. The authors and contributors are not responsible for any misuse or damage caused by this software.
