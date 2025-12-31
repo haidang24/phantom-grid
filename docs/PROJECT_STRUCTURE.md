@@ -1,4 +1,4 @@
-# Project Structure - Go Standard Layout
+# Project Structure
 
 ## Overview
 
@@ -12,12 +12,13 @@ Phantom Grid follows the **official Go standard project layout** used by major G
 
 **Convention**: Each subdirectory is a separate application with its own `main.go`.
 
-**Example**:
 ```
 cmd/
 ├── agent/          # phantom-grid binary
 │   └── main.go
-└── spa-client/     # spa-client binary
+├── spa-client/     # spa-client binary
+│   └── main.go
+└── config-gen/     # Configuration generator
     └── main.go
 ```
 
@@ -26,7 +27,7 @@ cmd/
 - Standard location that Go developers expect
 - Easy to build: `go build ./cmd/agent`
 
-**Used by**: Kubernetes (`cmd/kubectl`, `cmd/kubelet`), Docker (`cmd/docker`, `cmd/containerd`), Prometheus (`cmd/prometheus`, `cmd/promtool`)
+**Used by**: Kubernetes (`cmd/kubectl`, `cmd/kubelet`), Docker (`cmd/docker`), Prometheus (`cmd/prometheus`)
 
 ---
 
@@ -36,22 +37,21 @@ cmd/
 
 **Special Feature**: Go compiler **automatically prevents** importing packages from `internal/` directories from outside the module. This is a language feature, not just a convention.
 
-**Example**:
 ```
 internal/
 ├── agent/          # Agent core logic (private)
 ├── config/         # Configuration (private)
 ├── dashboard/      # Dashboard UI (private)
 ├── ebpf/           # eBPF loader (private)
-└── honeypot/       # Honeypot implementation (private)
+├── honeypot/       # Honeypot implementation (private)
+├── logger/          # Logging utilities (private)
+└── spa/             # SPA manager (private)
 ```
 
 **Why**:
 - **Privacy**: External projects cannot import these packages
 - **Encapsulation**: Internal implementation details stay hidden
 - **Breaking changes**: You can refactor internal code without affecting external users
-
-**Used by**: Kubernetes (`internal/`), Docker (`internal/`), Prometheus (`internal/`), etcd (`internal/`)
 
 **Go Language Feature**:
 ```go
@@ -67,7 +67,6 @@ import "github.com/your-org/phantom-grid/internal/agent"  // ERROR: cannot impor
 
 **Convention**: These packages can be imported by other projects.
 
-**Example**:
 ```
 pkg/
 └── spa/            # Reusable SPA client (public API)
@@ -79,8 +78,6 @@ pkg/
 - **Reusability**: Other projects can import and use these packages
 - **Public API**: These are your exported, stable APIs
 - **Versioning**: Changes here affect external users (semver)
-
-**Used by**: Kubernetes (`pkg/`), Docker (`pkg/`), Prometheus (`pkg/`)
 
 **Usage from external project**:
 ```go
@@ -97,7 +94,7 @@ import "github.com/your-org/phantom-grid/pkg/spa"  // OK: public API
 kubernetes/
 ├── cmd/            # kubectl, kubelet, kube-apiserver, etc.
 ├── pkg/            # Public APIs (client-go, api, etc.)
-└── internal/      # Private implementation
+└── internal/       # Private implementation
 ```
 
 ### Docker
@@ -108,18 +105,10 @@ docker/
 └── internal/       # Private implementation
 ```
 
-### Prometheus
-```
-prometheus/
-├── cmd/            # prometheus, promtool
-├── pkg/            # Public libraries
-└── internal/       # Private implementation
-```
-
 ### Phantom Grid (Current)
 ```
 phantom-grid/
-├── cmd/            # agent, spa-client
+├── cmd/            # agent, spa-client, config-gen
 ├── pkg/            # spa (public API)
 └── internal/       # agent, config, dashboard, ebpf, honeypot, etc. (private)
 ```
@@ -130,59 +119,25 @@ phantom-grid/
 
 ## Why This Structure?
 
-### 1. **Go Compiler Support**
+### 1. Go Compiler Support
 - `internal/` is a **language feature**, not just convention
 - Go compiler enforces privacy automatically
 - No need for manual access control
 
-### 2. **Industry Standard**
+### 2. Industry Standard
 - Used by all major Go projects
 - New contributors immediately understand the structure
 - Tooling (IDEs, linters) expects this layout
 
-### 3. **Clear Separation**
+### 3. Clear Separation
 - **cmd/**: "What can I run?"
 - **pkg/**: "What can I import?"
 - **internal/**: "Implementation details (don't import)"
 
-### 4. **Maintainability**
+### 4. Maintainability
 - Easy to find code
 - Clear boundaries between public and private APIs
 - Safe to refactor internal code
-
----
-
-## Should You Change It?
-
-### ❌ **Don't Change** - Current Structure is Correct
-
-**Reasons**:
-1. ✅ Follows Go standard project layout
-2. ✅ Matches major Go projects (Kubernetes, Docker, etc.)
-3. ✅ Go compiler enforces `internal/` privacy
-4. ✅ Industry best practice
-5. ✅ Tooling support (IDEs, go tools)
-
-### Alternative Structures (Not Recommended)
-
-**Bad Example 1**: Flat structure
-```
-phantom-grid/
-├── agent.go
-├── honeypot.go
-├── dashboard.go
-└── main.go
-```
-**Problem**: No separation, everything is public, hard to scale
-
-**Bad Example 2**: Custom names
-```
-phantom-grid/
-├── applications/    # Instead of cmd/
-├── private/        # Instead of internal/
-└── public/         # Instead of pkg/
-```
-**Problem**: Non-standard, confusing for contributors, no compiler support
 
 ---
 
@@ -215,4 +170,3 @@ phantom-grid/
 **Your current structure (`cmd/`, `internal/`, `pkg/`) is correct and follows Go best practices.**
 
 No changes needed - this is exactly how major Go projects are structured.
-

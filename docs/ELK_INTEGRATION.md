@@ -256,10 +256,6 @@ Default flush interval is 5 seconds. Events are automatically flushed even if ba
 elkConfig.FlushInterval = 10  // Flush every 10 seconds
 ```
 
-### Connection Pooling
-
-The exporter automatically tries multiple Elasticsearch addresses if provided. Failed requests are retried with the next address.
-
 ## Troubleshooting
 
 ### Events Not Appearing in Elasticsearch
@@ -294,13 +290,6 @@ If using TLS:
 - Use `-elk-skip-verify` only for testing (not production)
 - Ensure Elasticsearch cluster supports TLS
 
-### High Memory Usage
-
-If experiencing high memory usage:
-- Reduce batch size
-- Increase flush interval
-- Check Elasticsearch cluster health
-
 ## Best Practices
 
 1. **Use Index Templates**: Create index templates for consistent mapping
@@ -309,28 +298,6 @@ If experiencing high memory usage:
 4. **Monitor Performance**: Track export success rates and latency
 5. **Secure Credentials**: Never hardcode credentials, use environment variables or secrets management
 6. **High Availability**: Use multiple Elasticsearch addresses for redundancy
-
-## Integration with Logstash
-
-If using Logstash, you can configure it to receive events from Phantom Grid:
-
-```ruby
-input {
-  elasticsearch {
-    hosts => ["http://localhost:9200"]
-    index => "phantom-grid*"
-    query => '{"query": {"match_all": {}}}'
-  }
-}
-
-filter {
-  # Add any transformations here
-}
-
-output {
-  # Send to another system, enrich data, etc.
-}
-```
 
 ## Example Queries
 
@@ -391,5 +358,4 @@ GET phantom-grid/_search
 
 - [Elasticsearch Documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
 - [Kibana Documentation](https://www.elastic.co/guide/en/kibana/current/index.html)
-- [README.md](../README.md) - Main project documentation
-
+- [`README.md`](../README.md) - Main project documentation

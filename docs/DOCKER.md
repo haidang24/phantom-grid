@@ -181,7 +181,7 @@ docker run -it \
 **Solutions**:
 1. Check if port is in use: `sudo lsof -i :9999`
 2. Free the port: `sudo kill -9 <PID>`
-3. Or change `HONEYPOT_PORT` in `internal/ebpf/programs/phantom.c` and rebuild
+3. Or change `HONEYPOT_PORT` in configuration and rebuild
 
 ## Production Deployment
 
@@ -233,9 +233,9 @@ If Docker doesn't meet your requirements:
 2. **Kubernetes**: Use DaemonSet with hostNetwork and privileged containers
 3. **Systemd Service**: Run as systemd service on host
 
-## References
+## See Also
 
 - [Docker Security](https://docs.docker.com/engine/security/)
 - [eBPF/XDP Requirements](https://github.com/cilium/ebpf)
 - [Linux Capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html)
-
+- [`README.md`](../README.md) - Main project documentation

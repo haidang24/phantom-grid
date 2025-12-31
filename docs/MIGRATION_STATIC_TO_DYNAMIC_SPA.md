@@ -88,10 +88,6 @@ export SPA_TOTP_SECRET="$(cat totp_secret.txt)"
 sudo ./bin/phantom-grid -interface ens33
 ```
 
-#### Option C: Configuration File (Future)
-
-Edit `internal/config/spa.go` or create a config file (if implemented).
-
 ### Step 5: Update Client Code
 
 Update your client applications to use `DynamicClient`:
@@ -100,6 +96,8 @@ Update your client applications to use `DynamicClient`:
 package main
 
 import (
+    "log"
+    "os"
     "phantom-grid/internal/config"
     "phantom-grid/pkg/spa"
 )
@@ -240,27 +238,6 @@ If you need to rollback to static SPA:
    - Use least privilege principle
    - Audit key usage
 
-## Advanced Configuration
-
-### Custom TOTP Settings
-
-```go
-spaConfig.TOTPTimeStep = 60      // 60-second windows
-spaConfig.TOTPTolerance = 2      // Allow ±2 steps (±120s)
-```
-
-### Custom Replay Window
-
-```go
-spaConfig.ReplayWindowSeconds = 120  // 2-minute replay protection
-```
-
-### Disable Obfuscation
-
-```go
-spaConfig.EnableObfuscation = false  // Disable random padding
-```
-
 ## Testing Checklist
 
 - [ ] Keys generated successfully
@@ -276,16 +253,9 @@ spaConfig.EnableObfuscation = false  // Disable random padding
 - [ ] Logs show successful authentication
 - [ ] Performance acceptable (<1ms overhead)
 
-## Support
-
-For issues or questions:
-- Check logs: `tail -f logs/audit.json`
-- Review documentation: `docs/DYNAMIC_SPA.md`
-- Open issue on GitHub
-
 ## See Also
 
-- [`docs/DYNAMIC_SPA.md`](DYNAMIC_SPA.md) - Complete Dynamic SPA documentation
+- [`DYNAMIC_SPA.md`](DYNAMIC_SPA.md) - Complete Dynamic SPA documentation
+- [`DYNAMIC_SPA_USAGE_GUIDE.md`](DYNAMIC_SPA_USAGE_GUIDE.md) - Usage guide
 - [`internal/config/spa.go`](../internal/config/spa.go) - Configuration
 - [`pkg/spa/client_dynamic.go`](../pkg/spa/client_dynamic.go) - Client implementation
-

@@ -6,7 +6,7 @@ Phantom Grid protects critical ports using the **Phantom Protocol** - a zero-tru
 
 ## Current Protected Ports
 
-The following ports are currently protected by default:
+Phantom Grid protects 60+ critical ports by default, including:
 
 ### Core Services
 - **22** - SSH (Secure Shell)
@@ -14,7 +14,6 @@ The following ports are currently protected by default:
 ### Databases
 - **3306** - MySQL
 - **5432** - PostgreSQL
-- **5433** - PostgreSQL (Alternative)
 - **27017** - MongoDB
 - **6379** - Redis
 - **1433** - MSSQL Server
@@ -28,8 +27,6 @@ The following ports are currently protected by default:
 - **5601** - Kibana
 - **3000** - Grafana / Node.js
 - **9090** - Prometheus
-- **15672** - RabbitMQ Management
-- **5984** - CouchDB
 
 ### Remote Access
 - **3389** - RDP (Windows Remote Desktop)
@@ -44,66 +41,31 @@ The following ports are currently protected by default:
 - **389** - LDAP
 - **636** - LDAP (SSL)
 
-### Cache Services
-- **11211** - Memcached
+See [`internal/config/ports.go`](../internal/config/ports.go) for the complete list.
 
-### File Services
-- **2049** - NFS
+## Adding Protected Ports
 
-## How to Add More Protected Ports
+Phantom Grid uses a **centralized configuration system**. All port definitions are managed in Go code, and eBPF C code is automatically generated.
 
-To add a new port to the protected list, you need to update **two files**:
+### Step 1: Update Port Definitions
 
-### Step 1: Update Go Config (`internal/config/config.go`)
-
-Add your port to the `CriticalPorts` slice:
+Edit `internal/config/ports.go`:
 
 ```go
-var CriticalPorts = []int{
+var CriticalPortDefinitions = []PortDefinition{
     // ... existing ports ...
-    5432,   // PostgreSQL
-    12345,  // Your new port
+    {12345, "MyService", "My Custom Service", config.CategoryApplication, "MY_SERVICE_PORT"},
 }
 ```
 
-### Step 2: Update eBPF Program (`internal/ebpf/programs/phantom.c`)
-
-#### 2a. Add Port Definition
-
-Add a `#define` for your port at the top of the file (around line 24):
-
-```c
-#define YOUR_SERVICE_PORT 12345
-```
-
-#### 2b. Add Port Check
-
-Update the `is_critical_asset_port()` function (around line 153) to include your port:
-
-```c
-static __always_inline int is_critical_asset_port(__be16 port) {
-    __u16 p = bpf_ntohs(port);
-    
-    // ... existing checks ...
-    
-    // Your new service
-    if (p == YOUR_SERVICE_PORT) return 1;
-    
-    return 0;
-}
-```
-
-### Step 3: Rebuild
-
-After making changes, rebuild the project:
+### Step 2: Regenerate and Rebuild
 
 ```bash
-make clean
-make generate
+make generate-config
 make build
 ```
 
-**Important:** You must rebuild the eBPF programs (`make generate`) for changes to take effect.
+**That's it!** The eBPF C code is automatically generated. No manual C editing required.
 
 ## Example: Adding Port 5433 (PostgreSQL Alternative)
 
@@ -125,22 +87,19 @@ make build
 sudo ./bin/phantom-grid -interface ens33
 ```
 
-**That's it!** The eBPF C code is automatically generated. No manual C editing required.
-
 ## Port Categories
 
 When adding ports, consider which category they belong to:
 
-- **Core Services**: SSH, Telnet, etc.
-- **Databases**: MySQL, PostgreSQL, MongoDB, Redis, etc.
-- **Admin Panels**: Web-based management interfaces
-- **Remote Access**: RDP, VNC, WinRM, etc.
-- **Container Services**: Docker, Kubernetes, etc.
-- **Directory Services**: LDAP, Active Directory, etc.
-- **Cache Services**: Memcached, Redis (if used as cache)
-- **File Services**: NFS, SMB, etc.
-
-Grouping ports by category helps maintain code organization.
+- **CategoryCore**: Core services (SSH, Telnet, etc.)
+- **CategoryDatabase**: Database services
+- **CategoryAdmin**: Admin panels and management interfaces
+- **CategoryRemote**: Remote access protocols
+- **CategoryContainer**: Container services (Docker, etc.)
+- **CategoryApplication**: Application frameworks
+- **CategoryDirectory**: Directory services (LDAP, etc.)
+- **CategoryCache**: Cache services
+- **CategoryFile**: File services (NFS, etc.)
 
 ## Testing Protected Ports
 
@@ -162,40 +121,25 @@ After adding a port, test that it's properly protected:
    nc TARGET_IP 12345
    ```
 
-## Important Notes
-
-1. **eBPF Limitations**: The `is_critical_asset_port()` function uses multiple `if` statements. While eBPF can handle many comparisons, extremely long functions may fail verification. If you encounter verification errors, consider grouping ports more efficiently.
-
-2. **Performance**: Each port check adds a small overhead. For best performance, order checks from most common to least common.
-
-3. **Port Conflicts**: If a port is both in `CriticalPorts` and `FakePorts`, the critical port protection takes priority (SPA required).
-
-4. **Documentation**: Always document why a port is being protected in comments.
-
 ## Removing Protected Ports
 
 To remove a port from protection:
 
-1. Remove from `CriticalPorts` in `internal/config/config.go`
-2. Remove the `#define` and check from `internal/ebpf/programs/phantom.c`
-3. Rebuild with `make clean && make generate && make build`
+1. Remove from `CriticalPortDefinitions` in `internal/config/ports.go`
+2. Regenerate and rebuild:
+   ```bash
+   make generate-config
+   make build
+   ```
 
 ## Troubleshooting
 
 ### Port Not Being Protected
 
-1. **Check eBPF compilation**: Ensure `make generate` completed without errors
-2. **Verify port number**: Check that port number matches in both files
-3. **Check function logic**: Ensure the port check is correctly added to `is_critical_asset_port()`
-4. **Rebuild**: Always rebuild after changes
-
-### eBPF Verification Error
-
-If you get an eBPF verification error when adding many ports:
-
-1. **Group ports**: Use `||` operators to group multiple ports in one check
-2. **Simplify logic**: Break complex checks into simpler ones
-3. **Check limits**: eBPF has limits on instruction count - too many ports may exceed this
+1. **Check Definition**: Verify port is in `CriticalPortDefinitions`
+2. **Regenerate**: Run `make generate-config`
+3. **Rebuild**: Run `make build`
+4. **Verify Include**: Check eBPF files include `phantom_ports.h`
 
 ### Port Still Accessible Without SPA
 
@@ -208,15 +152,11 @@ If you get an eBPF verification error when adding many ports:
 
 1. **Document all changes**: Add comments explaining why ports are protected
 2. **Test thoroughly**: Always test after adding ports
-3. **Keep lists synchronized**: Ensure `CriticalPorts` and eBPF checks match
-4. **Group related ports**: Keep related ports together in code
-5. **Review regularly**: Periodically review protected ports list
+3. **Group related ports**: Keep related ports together in code
+4. **Review regularly**: Periodically review protected ports list
 
 ## See Also
 
-- [`internal/config/config.go`](../internal/config/config.go) - Core configuration
+- [`CONFIGURATION_MANAGEMENT.md`](CONFIGURATION_MANAGEMENT.md) - Complete configuration management guide
 - [`internal/config/ports.go`](../internal/config/ports.go) - Port definitions (single source of truth)
-- [`internal/config/constants.go`](../internal/config/constants.go) - eBPF constants
-- [`docs/CONFIGURATION_MANAGEMENT.md`](CONFIGURATION_MANAGEMENT.md) - Complete configuration management guide
 - [`README.md`](../README.md) - Main documentation
-

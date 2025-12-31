@@ -1,8 +1,8 @@
-# Dynamic Asymmetric SPA Implementation
+# Dynamic Asymmetric SPA - Technical Documentation
 
 ## Overview
 
-Phantom Grid now supports **Dynamic Asymmetric SPA** with the following security enhancements:
+Dynamic Asymmetric SPA enhances Single Packet Authorization with:
 
 1. **TOTP-based Nonce**: Time-based one-time password prevents replay attacks
 2. **Ed25519 Signature**: Asymmetric cryptography for authentication
@@ -28,27 +28,45 @@ Phantom Grid now supports **Dynamic Asymmetric SPA** with the following security
 - **Padding**: Random data for obfuscation (16-64 bytes)
 - **Signature**: HMAC-SHA256 (32 bytes) or Ed25519 (64 bytes)
 
-### Security Features
+## Security Features
 
-#### 1. TOTP Nonce
+### 1. TOTP Nonce
 - Prevents replay attacks by using time-based nonce
 - Configurable time step (default: 30 seconds)
 - Tolerance window (default: ±1 step = ±30 seconds)
 
-#### 2. Ed25519 Signature
+### 2. Ed25519 Signature
 - Fast, secure asymmetric cryptography
 - 64-byte signatures
 - Public key stored in BPF map (no hardcoding)
 
-#### 3. Anti-Replay Protection
+### 3. Anti-Replay Protection
 - LRU hash map tracks signature hashes
 - Configurable replay window (default: 60 seconds)
 - Automatic cleanup of old entries
 
-#### 4. Packet Obfuscation
+### 4. Packet Obfuscation
 - Random padding (16-64 bytes) makes packets look like noise
 - Harder to detect by IDS/IPS systems
 - Binary format instead of ASCII
+
+## Modes
+
+### Static Mode (Legacy)
+- Backward compatible with existing deployments
+- Uses hardcoded token from config
+- No TOTP or signature
+
+### Dynamic Mode (HMAC)
+- TOTP + HMAC-SHA256
+- Symmetric cryptography (shared secret)
+- Faster than Ed25519 but requires secret distribution
+
+### Asymmetric Mode (Recommended)
+- TOTP + Ed25519 signature
+- Asymmetric cryptography (public/private key)
+- No secret distribution needed
+- Best for enterprise deployments
 
 ## Configuration
 
@@ -64,8 +82,6 @@ go run ./cmd/spa-keygen -dir ./keys
 ```
 
 ### 2. Configure Server
-
-Edit `internal/config/config.go` or use command-line flags:
 
 ```bash
 sudo ./bin/phantom-grid \
@@ -98,81 +114,25 @@ if err != nil {
 err = client.SendMagicPacket()
 ```
 
-## Modes
+## Implementation
 
-### Static Mode (Legacy)
-- Backward compatible with existing deployments
-- Uses hardcoded token from config
-- No TOTP or signature
+### Components
 
-### Dynamic Mode (HMAC)
-- TOTP + HMAC-SHA256
-- Symmetric cryptography (shared secret)
-- Faster than Ed25519 but requires secret distribution
+- **`internal/spa/packet.go`**: Packet creation and parsing
+- **`internal/spa/totp.go`**: TOTP generation and validation
+- **`internal/spa/verifier.go`**: Packet verification logic
+- **`internal/spa/handler.go`**: User-space SPA handler
+- **`internal/spa/map_loader.go`**: BPF map loader
+- **`pkg/spa/client_dynamic.go`**: Client implementation
+- **`internal/ebpf/programs/phantom_spa_dynamic.c`**: eBPF verification program
 
-### Asymmetric Mode (Recommended)
-- TOTP + Ed25519 signature
-- Asymmetric cryptography (public/private key)
-- No secret distribution needed
-- Best for enterprise deployments
+### BPF Maps
 
-## Implementation Status
-
-### ✅ Completed
-- [x] TOTP generation and validation
-- [x] Ed25519 signature creation and verification
-- [x] HMAC-SHA256 support (dynamic mode)
-- [x] Binary packet format with obfuscation
-- [x] Key generation utility (`cmd/spa-keygen`)
-- [x] Client implementation (`pkg/spa/client_dynamic.go`)
-- [x] Packet verifier (`internal/spa/verifier.go`)
-- [x] eBPF program structure (`phantom_spa_dynamic.c`)
-- [x] BPF map loader (`internal/spa/map_loader.go`)
-- [x] User-space handler (`internal/spa/handler.go`)
-- [x] Agent integration
-- [x] Unit tests
-- [x] Migration guide
-
-### 🚧 In Progress
-- [ ] Full eBPF program integration (compile and load dynamic SPA program)
-- [ ] Performance benchmarking
-- [ ] Security audit
-
-### 📋 TODO
-- [ ] Example client applications
-- [ ] Integration tests
-- [ ] Documentation updates in README
-
-## Usage Examples
-
-### Server Side
-
-```bash
-# Start server with dynamic SPA
-sudo ./bin/phantom-grid \
-  -interface ens33 \
-  -spa-mode asymmetric \
-  -spa-key-dir ./keys
-```
-
-### Client Side
-
-```go
-// Load configuration
-spaConfig := config.DefaultDynamicSPAConfig()
-spaConfig.Mode = config.SPAModeAsymmetric
-
-// Load private key
-_, privateKey, _ := config.LoadKeysFromFile("", "./keys/spa_private.key")
-spaConfig.PrivateKey = privateKey
-
-// Set TOTP secret (must match server)
-spaConfig.TOTPSecret = []byte("shared-secret")
-
-// Create and use client
-client, _ := spa.NewDynamicClient("server-ip", spaConfig)
-client.SendMagicPacket()
-```
+- `spa_public_key`: Ed25519 public key (32 bytes)
+- `spa_totp_secret`: TOTP shared secret (32 bytes)
+- `spa_hmac_secret`: HMAC secret for dynamic mode (32 bytes)
+- `spa_replay_protection`: LRU map for replay detection
+- `spa_config`: SPA configuration (mode, time step, tolerance)
 
 ## Security Considerations
 
@@ -206,7 +166,7 @@ client.SendMagicPacket()
 
 ## Migration from Static SPA
 
-See [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](MIGRATION_STATIC_TO_DYNAMIC_SPA.md) for complete migration guide.
+See [`MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](MIGRATION_STATIC_TO_DYNAMIC_SPA.md) for complete migration guide.
 
 ## Troubleshooting
 
@@ -227,11 +187,8 @@ See [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](MIGRATION_STATIC_TO_DYNAMIC_SPA.
 
 ## See Also
 
+- [`DYNAMIC_SPA_USAGE_GUIDE.md`](DYNAMIC_SPA_USAGE_GUIDE.md) - Complete usage guide
+- [`MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](MIGRATION_STATIC_TO_DYNAMIC_SPA.md) - Migration guide
 - [`internal/config/spa.go`](../internal/config/spa.go) - Configuration
 - [`internal/spa/packet.go`](../internal/spa/packet.go) - Packet creation/parsing
-- [`internal/spa/totp.go`](../internal/spa/totp.go) - TOTP implementation
-- [`internal/spa/verifier.go`](../internal/spa/verifier.go) - Packet verification
-- [`internal/spa/handler.go`](../internal/spa/handler.go) - User-space handler
-- [`internal/spa/map_loader.go`](../internal/spa/map_loader.go) - BPF map loader
 - [`pkg/spa/client_dynamic.go`](../pkg/spa/client_dynamic.go) - Client implementation
-- [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](MIGRATION_STATIC_TO_DYNAMIC_SPA.md) - Migration guide

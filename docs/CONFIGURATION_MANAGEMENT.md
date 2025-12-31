@@ -116,86 +116,6 @@ make build
 
 **Important:** Always run `make generate-config` after modifying any configuration in Go files. This ensures eBPF C code stays synchronized.
 
-## Port Categories
-
-Ports are organized by category for better maintainability:
-
-- `CategoryCore`: Core services (SSH, etc.)
-- `CategoryDatabase`: Database services
-- `CategoryAdmin`: Admin panels and management interfaces
-- `CategoryRemote`: Remote access protocols
-- `CategoryContainer`: Container services (Docker, etc.)
-- `CategoryApplication`: Application frameworks
-- `CategoryDirectory`: Directory services (LDAP, etc.)
-- `CategoryCache`: Cache services
-- `CategoryFile`: File services (NFS, etc.)
-- `CategoryMessaging`: Messaging protocols
-
-## Generated Files
-
-### `phantom_ports.h`
-
-Contains **ALL** eBPF configuration constants:
-
-```c
-// Core Ports
-#define HONEYPOT_PORT 9999
-#define SSH_PORT 22
-
-// SPA Configuration
-#define SPA_MAGIC_PORT 1337
-#define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
-#define SPA_TOKEN_LEN 21
-#define SPA_WHITELIST_DURATION_NS (30ULL * 1000000000ULL)
-
-// OS Fingerprint Values (TTL)
-#define TTL_WINDOWS 128
-#define TTL_LINUX 64
-#define TTL_FREEBSD 64
-#define TTL_SOLARIS 255
-
-// OS Fingerprint Values (Window Size)
-#define WINDOW_WINDOWS 65535
-#define WINDOW_LINUX 29200
-#define WINDOW_FREEBSD 65535
-
-// Egress DLP
-#define MAX_PAYLOAD_SCAN 512
-
-// Port Definitions
-#define SSH_PORT 22  // SSH - Secure Shell
-#define MYSQL_PORT 3306  // MySQL - MySQL Database
-// ... all other ports
-```
-
-### `phantom_ports_functions.c`
-
-Contains port checking functions:
-
-```c
-static __always_inline int is_critical_asset_port(__be16 port) {
-    __u16 p = bpf_ntohs(port);
-    
-    // Core Services
-    if (p == SSH_PORT) return 1;
-    
-    // Databases
-    if (p == MYSQL_PORT) return 1;
-    // ...
-    
-    return 0;
-}
-
-static __always_inline int is_fake_port(__be16 port) {
-    __u16 p = bpf_ntohs(port);
-    
-    if (p == HTTP_PORT) return 1;
-    // ... all fake ports
-    
-    return 0;
-}
-```
-
 ## Build Process
 
 The build process automatically:
@@ -230,33 +150,23 @@ go test ./internal/config
 ## Benefits
 
 ### 1. Single Source of Truth
-
 - All configuration in Go code
 - No manual synchronization required
 - Reduced risk of configuration drift
 - Easy to audit and review
 
 ### 2. Type Safety
-
 - Port definitions are structured with metadata
 - Compile-time validation
 - Runtime consistency checks
 
 ### 3. Maintainability
-
 - Easy to add/modify ports
 - Automatic code generation
 - Clear documentation in code
 - No need to edit C code manually
 
-### 4. Testing
-
-- Automated validation tests
-- Consistency verification
-- Port range validation
-
-### 5. Professional Quality
-
+### 4. Professional Quality
 - Enterprise-grade configuration management
 - Eliminates human error
 - Scalable and maintainable
@@ -315,7 +225,6 @@ All configuration is managed in Go:
 4. **Group by Category**: Keep related ports together
 5. **Use Descriptive Names**: Make port names and descriptions clear
 6. **Version Control**: Commit Go config files but ignore generated files
-7. **Review Changes**: Review generated files in CI/CD pipeline
 
 ## Example: Adding a New Port
 
@@ -337,19 +246,9 @@ make build
 make test
 ```
 
-## Migration Notes
-
-If upgrading from manual configuration:
-
-1. **All constants moved to Go**: No more hardcoded values in C
-2. **Generated files**: `phantom_ports.h` and `phantom_ports_functions.c` are auto-generated
-3. **Include statements**: eBPF files now include generated header
-4. **No manual edits**: Never edit generated files directly
-
 ## See Also
 
+- [`CONFIGURING_PORTS.md`](CONFIGURING_PORTS.md) - Port configuration guide
 - [`internal/config/config.go`](../internal/config/config.go) - Core configuration
 - [`internal/config/ports.go`](../internal/config/ports.go) - Port definitions
-- [`internal/config/constants.go`](../internal/config/constants.go) - eBPF constants
 - [`cmd/config-gen/main.go`](../cmd/config-gen/main.go) - Configuration generator
-- [`docs/CONFIGURING_PORTS.md`](CONFIGURING_PORTS.md) - Port configuration guide
