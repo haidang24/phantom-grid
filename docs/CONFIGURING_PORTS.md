@@ -107,41 +107,25 @@ make build
 
 ## Example: Adding Port 5433 (PostgreSQL Alternative)
 
-### 1. Update `internal/config/config.go`:
+### 1. Update `internal/config/ports.go`:
 
 ```go
-var CriticalPorts = []int{
+var CriticalPortDefinitions = []PortDefinition{
     // ... existing ports ...
-    5432,   // PostgreSQL
-    5433,   // PostgreSQL Alternative
+    {5432, "PostgreSQL", "PostgreSQL Database", config.CategoryDatabase, "POSTGRES_PORT"},
+    {5433, "PostgreSQL Alt", "PostgreSQL Alternative Port", config.CategoryDatabase, "POSTGRES_ALT_PORT"},
 }
 ```
 
-### 2. Update `internal/ebpf/programs/phantom.c`:
-
-Add definition:
-```c
-#define POSTGRES_ALT_PORT 5433
-```
-
-Update function:
-```c
-static __always_inline int is_critical_asset_port(__be16 port) {
-    __u16 p = bpf_ntohs(port);
-    // ... existing checks ...
-    if (p == POSTGRES_PORT || p == POSTGRES_ALT_PORT) return 1;
-    // ... rest of checks ...
-}
-```
-
-### 3. Rebuild:
+### 2. Regenerate and Rebuild:
 
 ```bash
-make clean
-make generate
+make generate-config
 make build
 sudo ./bin/phantom-grid -interface ens33
 ```
+
+**That's it!** The eBPF C code is automatically generated. No manual C editing required.
 
 ## Port Categories
 
@@ -230,7 +214,9 @@ If you get an eBPF verification error when adding many ports:
 
 ## See Also
 
-- [`internal/config/config.go`](../internal/config/config.go) - Port configuration
-- [`internal/ebpf/programs/phantom.c`](../internal/ebpf/programs/phantom.c) - eBPF port protection logic
+- [`internal/config/config.go`](../internal/config/config.go) - Core configuration
+- [`internal/config/ports.go`](../internal/config/ports.go) - Port definitions (single source of truth)
+- [`internal/config/constants.go`](../internal/config/constants.go) - eBPF constants
+- [`docs/CONFIGURATION_MANAGEMENT.md`](CONFIGURATION_MANAGEMENT.md) - Complete configuration management guide
 - [`README.md`](../README.md) - Main documentation
 

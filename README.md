@@ -1047,6 +1047,26 @@ Contributions are welcome! Please read:
 
 For detailed technical documentation, see the [`docs/`](docs/) directory.
 
+### SPA Documentation
+
+- [`docs/DYNAMIC_SPA_USAGE_GUIDE.md`](docs/DYNAMIC_SPA_USAGE_GUIDE.md) - **Complete usage guide for Dynamic Asymmetric SPA** (Vietnamese)
+- [`docs/DYNAMIC_SPA.md`](docs/DYNAMIC_SPA.md) - Technical implementation details
+- [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md) - Migration guide from static to dynamic SPA
+
+### Configuration Management
+
+Phantom Grid uses a **fully centralized configuration system** - all configuration is managed in Go code, and eBPF C code is automatically generated. This eliminates configuration drift and ensures consistency.
+
+**Configuration Files:**
+
+- `internal/config/config.go` - Core constants (SPA, network ports)
+- `internal/config/ports.go` - Port definitions (protected and fake ports)
+- `internal/config/constants.go` - eBPF-specific constants (OS fingerprint values)
+
+**No manual C code editing required!** All eBPF constants are auto-generated from Go config.
+
+See [`docs/CONFIGURATION_MANAGEMENT.md`](docs/CONFIGURATION_MANAGEMENT.md) for complete details.
+
 ### ELK Integration
 
 Phantom Grid can export security events to Elasticsearch for centralized logging and analysis. See [`docs/ELK_INTEGRATION.md`](docs/ELK_INTEGRATION.md) for:

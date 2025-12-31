@@ -21,6 +21,11 @@ func main() {
 	elkPassFlag := flag.String("elk-pass", "", "Elasticsearch password (optional)")
 	elkTLSFlag := flag.Bool("elk-tls", false, "Enable TLS for Elasticsearch")
 	elkSkipVerifyFlag := flag.Bool("elk-skip-verify", false, "Skip TLS certificate verification")
+	
+	// SPA Configuration flags
+	spaModeFlag := flag.String("spa-mode", "static", "SPA mode: 'static', 'dynamic', or 'asymmetric'")
+	spaKeyDirFlag := flag.String("spa-key-dir", "./keys", "Directory containing SPA keys")
+	spaTOTPSecretFlag := flag.String("spa-totp-secret", "", "TOTP secret (base64 encoded, 32 bytes)")
 	flag.Parse()
 
 	// Parse output mode
@@ -59,8 +64,45 @@ func main() {
 		dashboardChan = make(chan string, 1000)
 	}
 
+	// Configure Dynamic SPA
+	var spaConfig *config.DynamicSPAConfig
+	if *spaModeFlag != "static" {
+		spaConfig = config.DefaultDynamicSPAConfig()
+		
+		// Set mode
+		switch *spaModeFlag {
+		case "dynamic":
+			spaConfig.Mode = config.SPAModeDynamic
+		case "asymmetric":
+			spaConfig.Mode = config.SPAModeAsymmetric
+		default:
+			log.Fatalf("[!] Invalid SPA mode: %s. Use 'static', 'dynamic', or 'asymmetric'", *spaModeFlag)
+		}
+		
+		// Load keys if asymmetric mode
+		if spaConfig.Mode == config.SPAModeAsymmetric {
+			publicKey, _, err := config.LoadKeysFromFile(
+				fmt.Sprintf("%s/spa_public.key", *spaKeyDirFlag),
+				"",
+			)
+			if err != nil {
+				log.Printf("[!] Warning: Failed to load public key: %v", err)
+				log.Printf("[!] Falling back to static SPA mode")
+				spaConfig = nil
+			} else {
+				spaConfig.PublicKey = publicKey
+			}
+		}
+		
+		// Load TOTP secret if provided
+		if *spaTOTPSecretFlag != "" {
+			// TODO: Decode base64 secret
+			log.Printf("[!] TOTP secret loading not yet implemented")
+		}
+	}
+
 	// Create and start agent
-	agentInstance, err := agent.New(*interfaceFlag, outputMode, elkConfig, dashboardChan)
+	agentInstance, err := agent.New(*interfaceFlag, outputMode, elkConfig, dashboardChan, spaConfig)
 	if err != nil {
 		log.Fatalf("[!] Failed to initialize agent: %v", err)
 	}

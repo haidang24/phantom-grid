@@ -26,6 +26,10 @@ internal/ebpf/phantom_bpf*.o
 internal/ebpf/egress_bpf*.go
 internal/ebpf/egress_bpf*.o
 
+# Generated port configuration files
+internal/ebpf/programs/phantom_ports.h
+internal/ebpf/programs/phantom_ports_functions.c
+
 # Logs (keep directory structure)
 logs/*
 !logs/.gitkeep

@@ -11,88 +11,18 @@
 /*
  * PHANTOM GRID - eBPF KERNEL MODULE
  * XDP Layer for Transparent Redirection & Stealth Trapping
+ * 
+ * ALL CONFIGURATION IS AUTO-GENERATED FROM Go CONFIG
+ * Do not edit constants manually - update internal/config/config.go and ports.go instead
+ * Run 'make generate-config' to regenerate
  */
 
-#define HONEYPOT_PORT 9999
-#define SSH_PORT 22
-#define SPA_MAGIC_PORT 1337
-#define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
-#define SPA_TOKEN_LEN 21
-#define SPA_WHITELIST_DURATION_NS (30ULL * 1000000000ULL) // 30 seconds in nanoseconds
+// Include auto-generated configuration (constants and port definitions)
+// This file is generated from internal/config/config.go and ports.go by 'make generate-config'
+// ALL ports, SPA settings, and OS fingerprint values are defined in phantom_ports.h
+#include "phantom_ports.h"
 
-// Critical asset ports protected by Phantom Protocol (default: DROP all traffic)
-// IMPORTANT: When adding ports here, also update CriticalPorts in internal/config/config.go
-// and add the port check in is_critical_asset_port() function below
-// Databases
-#define MYSQL_PORT 3306
-#define POSTGRES_PORT 5432
-#define POSTGRES_ALT_PORT 5433
-#define MONGODB_PORT 27017
-#define MONGODB_SHARD_PORT 27018
-#define REDIS_PORT 6379
-#define MSSQL_PORT 1433
-#define MSSQL_BROWSER_PORT 2702
-#define MSSQL_MONITOR_PORT 1434
-#define ORACLE_PORT 1521
-#define DERBY_PORT 1527
-#define DB2_PORT 50000
-#define DB2_SSL_PORT 50001
-// Admin Panels & Management
-#define ADMIN_PANEL_PORT_1 8080
-#define ADMIN_PANEL_PORT_2 8443
-#define ADMIN_PANEL_PORT_3 9000
-#define ELASTICSEARCH_PORT 9200
-#define KIBANA_PORT 5601
-#define GRAFANA_PORT 3000
-#define PROMETHEUS_PORT 9090
-#define PROMETHEUS_PUSH_PORT 9091
-#define RABBITMQ_MGMT_PORT 15672
-#define RABBITMQ_MGMT_ERLANG_PORT 25672
-#define COUCHDB_PORT 5984
-#define ACTIVEMQ_WEB_PORT 8161
-#define ACTIVEMQ_WEB_SSL_PORT 8162
-#define ACTIVEMQ_PORT 61616
-#define ACTIVEMQ_SSL_PORT 61617
-#define ZOOKEEPER_PORT 2181
-#define WEBLOGIC_PORT 7001
-#define WEBLOGIC_SSL_PORT 7002
-#define GLASSFISH_ADMIN_PORT 4848
-#define GLASSFISH_ADMIN_SSL_PORT 4849
-#define WILDFLY_ADMIN_PORT 9990
-#define WILDFLY_ADMIN_SSL_PORT 9993
-// Remote Access
-#define RDP_PORT 3389
-#define WINRM_HTTP_PORT 5985
-#define WINRM_HTTPS_PORT 5986
-// Container Services
-#define DOCKER_PORT 2375
-#define DOCKER_TLS_PORT 2376
-#define DOCKER_REGISTRY_PORT 5000
-// Application Frameworks
-#define NODEJS_PORT 3000
-#define FLASK_PORT 5000
-#define DJANGO_PORT 8000
-#define JUPYTER_PORT 8888
-// Directory Services
-#define LDAP_PORT 389
-#define LDAP_SSL_PORT 636
-#define LDAP_GC_PORT 3268
-#define LDAP_GC_SSL_PORT 3269
-// Cache Services
-#define MEMCACHED_PORT 11211
-#define MEMCACHED_SSL_PORT 11214
-// File Services
-#define NFS_PORT 2049
-#define RPC_PORTMAPPER_PORT 111
-// Messaging Protocols
-#define MQTT_PORT 1883
-#define MQTT_SSL_PORT 8883
-#define STOMP_PORT 61613
-#define STOMP_SSL_PORT 61614
-#define RABBITMQ_AMQP_PORT 5672
-#define RABBITMQ_AMQP_SSL_PORT 5671
-#define ERLANG_PORTMAPPER_PORT 4369
-
+// Standard protocol definitions (not configurable, part of IP specification)
 #ifndef IPPROTO_TCP
 #define IPPROTO_TCP 6
 #endif
@@ -102,16 +32,6 @@
 #ifndef IPPROTO_ICMP
 #define IPPROTO_ICMP 1
 #endif
-
-// OS Fingerprint Values
-#define TTL_WINDOWS 128
-#define TTL_LINUX 64
-#define TTL_FREEBSD 64
-#define TTL_SOLARIS 255
-
-#define WINDOW_WINDOWS 65535
-#define WINDOW_LINUX 29200
-#define WINDOW_FREEBSD 65535
 
 // MAP DEFINITIONS
 struct {

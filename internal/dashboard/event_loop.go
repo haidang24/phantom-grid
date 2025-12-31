@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	ui "github.com/gizak/termui/v3"
-
-	"phantom-grid/internal/logger"
+	ui 	"github.com/gizak/termui/v3"
 )
 
 // runEventLoop runs the main dashboard event loop
@@ -53,11 +51,11 @@ func (d *Dashboard) runEventLoop(w *DashboardWidgets) {
 					return
 				case " ":
 					paused = !paused
-					if paused {
-						d.logChan <- "[SYSTEM] Log scrolling paused"
-					} else {
-						d.logChan <- "[SYSTEM] Log scrolling resumed"
+					msg := "[SYSTEM] Log scrolling paused"
+					if !paused {
+						msg = "[SYSTEM] Log scrolling resumed"
 					}
+					d.handleLogMessage(msg, w, paused, &autoScroll)
 				case "j", "<Down>":
 					w.logList.ScrollDown()
 					autoScroll = false
@@ -76,12 +74,12 @@ func (d *Dashboard) runEventLoop(w *DashboardWidgets) {
 					ui.Render(w.logList, w.connStatsBox)
 				case "a":
 					autoScroll = !autoScroll
+					msg := "[SYSTEM] Auto-scroll disabled (press 'a' to enable, 'G' to go to bottom)"
 					if autoScroll {
 						w.logList.ScrollBottom()
-						d.logChan <- "[SYSTEM] Auto-scroll enabled (press 'a' to disable)"
-					} else {
-						d.logChan <- "[SYSTEM] Auto-scroll disabled (press 'a' to enable, 'G' to go to bottom)"
+						msg = "[SYSTEM] Auto-scroll enabled (press 'a' to disable)"
 					}
+					d.handleLogMessage(msg, w, paused, &autoScroll)
 					ui.Render(w.logList, w.connStatsBox)
 				}
 			}
@@ -101,10 +99,6 @@ func (d *Dashboard) updateStatistics(w *DashboardWidgets, lastAttackCount *uint6
 		w.redirectedBox.Text = fmt.Sprintf("\n\n   %d", attackVal)
 
 		if attackVal > *lastAttackCount {
-			newAttacks := attackVal - *lastAttackCount
-			if newAttacks > 0 {
-				d.logChan <- fmt.Sprintf("[DEBUG] XDP detected %d new SYN packets to fake ports (Total: %d)", newAttacks, attackVal)
-			}
 			*lastAttackCount = attackVal
 		}
 	}

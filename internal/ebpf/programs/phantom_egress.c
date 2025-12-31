@@ -9,8 +9,16 @@
 #include <linux/pkt_cls.h>
 #include <linux/in.h>
 
-#define HONEYPOT_PORT 9999
-#define MAX_PAYLOAD_SCAN 512
+/*
+ * PHANTOM GRID - EGRESS DATA LOSS PREVENTION (DLP) MODULE
+ * 
+ * ALL CONFIGURATION IS AUTO-GENERATED FROM Go CONFIG
+ * Do not edit constants manually - update internal/config/config.go instead
+ * Run 'make generate-config' to regenerate
+ */
+
+// Include auto-generated configuration
+#include "phantom_ports.h"
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);

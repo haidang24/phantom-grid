@@ -21,11 +21,11 @@ type Dashboard struct {
 	honeypotConns uint64
 	activeSessions uint64
 	totalCommands  uint64
-	logChan       chan<- string
+	logChan       <-chan string
 }
 
 // New creates a new Dashboard instance
-func New(iface string, phantomObjs *ebpf.PhantomObjects, egressObjs *ebpf.EgressObjects, logChan chan<- string) *Dashboard {
+func New(iface string, phantomObjs *ebpf.PhantomObjects, egressObjs *ebpf.EgressObjects, logChan <-chan string) *Dashboard {
 	return &Dashboard{
 		phantomObjs: phantomObjs,
 		egressObjs:  egressObjs,

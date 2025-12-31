@@ -12,13 +12,14 @@
 /*
  * PHANTOM GRID - SINGLE PACKET AUTHORIZATION (SPA) MODULE
  * Zero Trust Access Control - Server is invisible until Magic Packet received
+ * 
+ * ALL CONFIGURATION IS AUTO-GENERATED FROM Go CONFIG
+ * Do not edit constants manually - update internal/config/config.go instead
+ * Run 'make generate-config' to regenerate
  */
 
-#define SSH_PORT 22
-#define SPA_MAGIC_PORT 1337
-#define SPA_SECRET_TOKEN "PHANTOM_GRID_SPA_2025"
-#define SPA_TOKEN_LEN 21
-#define SPA_WHITELIST_DURATION_NS (30ULL * 1000000000ULL) // 30 seconds in nanoseconds
+// Include auto-generated configuration
+#include "phantom_ports.h"
 
 // Whitelist map: IP address -> expiration timestamp
 struct {

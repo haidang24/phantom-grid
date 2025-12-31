@@ -29,7 +29,7 @@ type Agent struct {
 }
 
 // New creates a new Agent instance
-func New(interfaceName string, outputMode config.OutputMode, elkConfig config.ELKConfiguration, dashboardChan chan<- string) (*Agent, error) {
+func New(interfaceName string, outputMode config.OutputMode, elkConfig config.ELKConfiguration, dashboardChan chan<- string, spaConfig *config.DynamicSPAConfig) (*Agent, error) {
 	// Detect network interface
 	iface, ifaceName, err := network.DetectInterface(interfaceName)
 	if err != nil {
@@ -60,6 +60,7 @@ func New(interfaceName string, outputMode config.OutputMode, elkConfig config.EL
 		ifaceName:  ifaceName,
 		logChan:    logManager.LogChannel(),
 		logManager: logManager,
+		spaConfig:  spaConfig,
 	}
 
 	return agent, nil
@@ -94,6 +95,14 @@ func (a *Agent) Start() error {
 	)
 	a.spaManager = spa.NewManager(spaWrapper, a.logChan, config.SPAWhitelistDuration)
 	go a.spaManager.Start()
+
+	// Initialize Dynamic SPA if configured
+	if a.spaConfig != nil && a.spaConfig.Mode != config.SPAModeStatic {
+		if err := a.initDynamicSPA(); err != nil {
+			log.Printf("[!] Warning: Failed to initialize dynamic SPA: %v", err)
+			log.Printf("[!] Falling back to static SPA mode")
+		}
+	}
 
 	// Log system info
 	a.logChan <- fmt.Sprintf("[SYSTEM] SPA Magic Packet port: %d", config.SPAMagicPort)
@@ -134,6 +143,46 @@ func (a *Agent) Start() error {
 	default:
 		// Honeypot started successfully
 	}
+
+	return nil
+}
+
+// initDynamicSPA initializes dynamic SPA handler and loads configuration
+func (a *Agent) initDynamicSPA() error {
+	// Create verifier
+	verifier := spa.NewVerifier(a.spaConfig)
+
+	// Note: For now, we use the existing whitelist map
+	// In a full implementation, we would need access to the dynamic SPA maps
+	// This requires the dynamic SPA eBPF program (phantom_spa_dynamic.c) to be loaded
+	// For now, we'll create a simplified map loader using existing maps
+	
+	// Create map loader (using existing maps as placeholders)
+	// TODO: Load dynamic SPA eBPF program and use its maps
+	// The dynamic SPA program needs to be compiled and loaded separately
+	mapLoader := spa.NewMapLoader(
+		a.ebpfLoader.PhantomObjs.SpaWhitelist, // whitelist map
+		nil, // replay map (from dynamic SPA program - not available yet)
+		nil, // totp secret map (from dynamic SPA program - not available yet)
+		nil, // hmac secret map (from dynamic SPA program - not available yet)
+		nil, // config map (from dynamic SPA program - not available yet)
+	)
+
+	// Load configuration (if maps are available)
+	if mapLoader != nil {
+		if err := mapLoader.LoadConfiguration(a.spaConfig); err != nil {
+			log.Printf("[!] Warning: Failed to load SPA config into maps: %v", err)
+		}
+	}
+
+	// Create and start handler
+	handler := spa.NewHandler(verifier, mapLoader, a.logChan, a.spaConfig)
+	if err := handler.Start(); err != nil {
+		return fmt.Errorf("failed to start SPA handler: %w", err)
+	}
+
+	a.spaHandler = handler
+	a.logChan <- fmt.Sprintf("[SPA] Dynamic SPA initialized (mode: %s)", a.spaConfig.Mode)
 
 	return nil
 }
@@ -199,6 +248,11 @@ func (a *Agent) GetInterfaceName() string {
 
 // Close cleans up agent resources
 func (a *Agent) Close() error {
+	if a.spaHandler != nil {
+		if err := a.spaHandler.Stop(); err != nil {
+			return err
+		}
+	}
 	if a.honeypot != nil {
 		if err := a.honeypot.Close(); err != nil {
 			return err

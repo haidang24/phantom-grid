@@ -4,9 +4,13 @@ CFLAGS := -O2 -g -Wall -Werror
 # Go dependencies
 GO_MOD := go.mod
 
-all: generate build
+all: generate-config generate build
 
-generate:
+generate-config:
+	@echo "Generating eBPF configuration from Go config..."
+	@go run ./cmd/config-gen
+
+generate: generate-config
 	go generate ./...
 
 build: generate
@@ -28,6 +32,8 @@ clean:
 	rm -f phantom-grid spa-client
 	rm -f internal/ebpf/phantom_bpf*
 	rm -f internal/ebpf/egress_bpf*
+	rm -f internal/ebpf/programs/phantom_ports.h
+	rm -f internal/ebpf/programs/phantom_ports_functions.c
 	rm -f coverage.out coverage.html
 	@echo "Clean complete"
 
@@ -48,5 +54,5 @@ test-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
-.PHONY: all generate build run run-interface clean deps fmt lint test test-coverage
+.PHONY: all generate-config generate build run run-interface clean deps fmt lint test test-coverage
 
