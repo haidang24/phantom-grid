@@ -54,7 +54,14 @@ Thumbs.db
 *.tmp
 *.temp
 
+# SPA Keys (never commit keys!)
+keys/
+*.key
+!*.key.example
+
 # Docker
 .dockerignore.bak
 docker-compose.override.yml
 
+# Doc
+docs/

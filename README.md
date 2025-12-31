@@ -167,10 +167,16 @@ For advanced Single Packet Authorization with TOTP and Ed25519, see:
 
 ## Documentation
 
-- [`docs/ELK_INTEGRATION.md`](docs/ELK_INTEGRATION.md) - ELK stack integration
+- **[`docs/SPA_MECHANISM_EXPLAINED.md`](docs/SPA_MECHANISM_EXPLAINED.md)** - **📖 Detailed explanation of SPA mechanism (Recommended for beginners)**
+- **[`docs/SPA_KEYS_MANAGEMENT.md`](docs/SPA_KEYS_MANAGEMENT.md)** - **🔑 Keys management guide (Generate, store, distribute)**
+- [`docs/DYNAMIC_SPA_USAGE_GUIDE.md`](docs/DYNAMIC_SPA_USAGE_GUIDE.md) - Dynamic SPA usage guide
+- [`docs/DYNAMIC_SPA.md`](docs/DYNAMIC_SPA.md) - Dynamic SPA technical documentation
+- [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md) - Migration guide
 - [`docs/CONFIGURING_PORTS.md`](docs/CONFIGURING_PORTS.md) - Port configuration
-- [`docs/DYNAMIC_SPA_USAGE_GUIDE.md`](docs/DYNAMIC_SPA_USAGE_GUIDE.md) - Dynamic SPA guide
+- [`docs/CONFIGURATION_MANAGEMENT.md`](docs/CONFIGURATION_MANAGEMENT.md) - Configuration management
+- [`docs/ELK_INTEGRATION.md`](docs/ELK_INTEGRATION.md) - ELK stack integration
 - [`docs/DOCKER.md`](docs/DOCKER.md) - Docker deployment
+- [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) - Project structure
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) - Development guidelines
 - [`SECURITY.md`](SECURITY.md) - Security policy
 
