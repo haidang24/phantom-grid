@@ -54,22 +54,44 @@ func (h *Handler) Start() error {
 	go h.handlePackets()
 
 	// Log startup information (use fmt.Printf for immediate output)
-	fmt.Printf("[SPA] User-space handler started on port %d\n", config.SPAMagicPort)
-	h.logChan <- fmt.Sprintf("[SPA] User-space handler started on port %d", config.SPAMagicPort)
+	msg := fmt.Sprintf("[SPA] User-space handler started on port %d", config.SPAMagicPort)
+	fmt.Printf("%s\n", msg)
+	select {
+	case h.logChan <- msg:
+	default:
+	}
 	
 	if h.spaConfig != nil {
-		fmt.Printf("[SPA] Mode: %s\n", h.spaConfig.Mode)
-		h.logChan <- fmt.Sprintf("[SPA] Mode: %s", h.spaConfig.Mode)
+		msg := fmt.Sprintf("[SPA] Mode: %s", h.spaConfig.Mode)
+		fmt.Printf("%s\n", msg)
+		select {
+		case h.logChan <- msg:
+		default:
+		}
 	} else {
-		fmt.Printf("[SPA] Mode: static (legacy)\n")
-		h.logChan <- fmt.Sprintf("[SPA] Mode: static (legacy)")
+		msg := fmt.Sprintf("[SPA] Mode: static (legacy)")
+		fmt.Printf("%s\n", msg)
+		select {
+		case h.logChan <- msg:
+		default:
+		}
 	}
 	if h.staticToken != "" {
-		fmt.Printf("[SPA] Static token configured (length: %d)\n", len(h.staticToken))
-		h.logChan <- fmt.Sprintf("[SPA] Static token configured (length: %d)", len(h.staticToken))
+		msg := fmt.Sprintf("[SPA] Static token configured (length: %d)", len(h.staticToken))
+		fmt.Printf("%s\n", msg)
+		select {
+		case h.logChan <- msg:
+		default:
+		}
 	}
-	fmt.Printf("[SPA] Handler ready to receive packets\n")
-	h.logChan <- fmt.Sprintf("[SPA] Handler ready to receive packets")
+	readyMsg := fmt.Sprintf("[SPA] Handler ready to receive packets")
+	fmt.Printf("%s\n", readyMsg)
+	// Non-blocking send to log channel
+	select {
+	case h.logChan <- readyMsg:
+		default:
+		// Channel full, but we already printed to stdout
+	}
 
 	return nil
 }
@@ -86,12 +108,24 @@ func (h *Handler) Stop() error {
 // handlePackets processes incoming SPA packets
 func (h *Handler) handlePackets() {
 	buffer := make([]byte, 1500) // Max UDP packet size
-	h.logChan <- fmt.Sprintf("[SPA] Packet handler goroutine started, listening for packets...")
+	msg := fmt.Sprintf("[SPA] Packet handler goroutine started, listening for packets...")
+	fmt.Printf("%s\n", msg)
+	// Non-blocking send to log channel
+	select {
+	case h.logChan <- msg:
+	default:
+		// Channel full, but we already printed to stdout
+	}
 
 	for {
 		select {
 		case <-h.stopChan:
-			h.logChan <- fmt.Sprintf("[SPA] Packet handler stopping...")
+			msg := fmt.Sprintf("[SPA] Packet handler stopping...")
+			fmt.Printf("%s\n", msg)
+			select {
+			case h.logChan <- msg:
+			default:
+			}
 			return
 		default:
 			// Set read deadline to allow checking stopChan
@@ -103,14 +137,24 @@ func (h *Handler) handlePackets() {
 					// Timeout is expected, continue loop
 					continue
 				}
-				h.logChan <- fmt.Sprintf("[SPA] Read error: %v", err)
+				errMsg := fmt.Sprintf("[SPA] Read error: %v", err)
+				fmt.Printf("%s\n", errMsg)
+				select {
+				case h.logChan <- errMsg:
+				default:
+				}
 				continue
 			}
 
 			// Log that we received a packet (both to log channel and stdout for debugging)
 			msg := fmt.Sprintf("[SPA] Received packet from %s (length: %d bytes)", clientAddr.IP, n)
 			fmt.Printf("%s\n", msg)
-			h.logChan <- msg
+			// Non-blocking send to log channel
+			select {
+			case h.logChan <- msg:
+			default:
+				// Channel full, but we already printed to stdout
+			}
 
 			// Process packet
 			go h.processPacket(buffer[:n], clientAddr.IP)
@@ -129,7 +173,10 @@ func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 		if h.mapLoader == nil {
 			msg := fmt.Sprintf("[SPA] Static packet received but mapLoader not available")
 			fmt.Printf("%s\n", msg)
-			h.logChan <- msg
+			select {
+			case h.logChan <- msg:
+			default:
+			}
 			return
 		}
 		
@@ -143,13 +190,19 @@ func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 		if err := h.mapLoader.WhitelistIP(clientIP, duration); err != nil {
 			msg := fmt.Sprintf("[SPA] Failed to whitelist IP %s for static SPA: %v", clientIP, err)
 			fmt.Printf("%s\n", msg)
-			h.logChan <- msg
+			select {
+			case h.logChan <- msg:
+			default:
+			}
 			return
 		}
 		
 		msg := fmt.Sprintf("[SPA] Successfully authenticated and whitelisted IP: %s (static token, length: %d)", clientIP, len(packetData))
 		fmt.Printf("%s\n", msg)
-		h.logChan <- msg
+		select {
+		case h.logChan <- msg:
+		default:
+		}
 		return
 	}
 	
@@ -161,31 +214,60 @@ func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 		}
 		msg := fmt.Sprintf("[SPA] Received non-matching packet from %s (length: %d, first bytes: %x, expected token length: %d)", clientIP, len(packetData), packetData[:debugLen], len(h.staticToken))
 		fmt.Printf("%s\n", msg)
-		h.logChan <- msg
+		select {
+		case h.logChan <- msg:
+		default:
+		}
 	}
 
 	// Parse dynamic packet
 	packet, err := ParseSPAPacket(packetData)
 	if err != nil {
-		h.logChan <- fmt.Sprintf("[SPA] Failed to parse packet from %s: %v", clientIP, err)
+		errMsg := fmt.Sprintf("[SPA] Failed to parse packet from %s: %v", clientIP, err)
+		fmt.Printf("%s\n", errMsg)
+		select {
+		case h.logChan <- errMsg:
+		default:
+		}
 		return
 	}
 
 	// Verify packet
 	valid, err := h.verifier.VerifyPacket(packetData)
 	if !valid {
-		h.logChan <- fmt.Sprintf("[SPA] Invalid packet from %s: %v", clientIP, err)
+		errMsg := fmt.Sprintf("[SPA] Invalid packet from %s: %v", clientIP, err)
+		fmt.Printf("%s\n", errMsg)
+		select {
+		case h.logChan <- errMsg:
+		default:
+		}
 		return
 	}
 
 	// Whitelist IP
 	if err := h.mapLoader.WhitelistIP(clientIP, h.spaConfig.ReplayWindowSeconds); err != nil {
-		h.logChan <- fmt.Sprintf("[SPA] Failed to whitelist IP %s: %v", clientIP, err)
+		errMsg := fmt.Sprintf("[SPA] Failed to whitelist IP %s: %v", clientIP, err)
+		fmt.Printf("%s\n", errMsg)
+		select {
+		case h.logChan <- errMsg:
+		default:
+		}
 		return
 	}
 
-	h.logChan <- fmt.Sprintf("[SPA] Successfully authenticated and whitelisted IP: %s", clientIP)
-	h.logChan <- fmt.Sprintf("[SPA] TOTP: %d, Timestamp: %d", packet.TOTP, packet.Timestamp)
+	successMsg := fmt.Sprintf("[SPA] Successfully authenticated and whitelisted IP: %s", clientIP)
+	fmt.Printf("%s\n", successMsg)
+	select {
+	case h.logChan <- successMsg:
+	default:
+	}
+	
+	totpMsg := fmt.Sprintf("[SPA] TOTP: %d, Timestamp: %d", packet.TOTP, packet.Timestamp)
+	fmt.Printf("%s\n", totpMsg)
+	select {
+	case h.logChan <- totpMsg:
+	default:
+	}
 }
 
 // isStaticPacket checks if packet is legacy static token

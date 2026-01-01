@@ -3,7 +3,11 @@ package spa
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/cilium/ebpf"
 
@@ -82,12 +86,61 @@ func (ml *MapLoader) WhitelistIP(ip net.IP, durationSeconds int) error {
 
 	ipUint32 := binary.BigEndian.Uint32(ipv4)
 
-	// Calculate expiry (nanoseconds)
-	// Note: This is a simplified calculation. In production, use bpf_ktime_get_ns() equivalent
-	// For now, we'll use a relative duration that the eBPF program will handle
-	expiry := uint64(durationSeconds) * 1000000000 // Convert to nanoseconds
+	// Calculate absolute expiry timestamp (nanoseconds since boot)
+	// eBPF uses bpf_ktime_get_ns() which returns nanoseconds since system boot
+	// We need to estimate the current boot time to calculate expiry correctly
+	
+	// Read /proc/uptime to get system uptime in seconds
+	uptimeSeconds, err := getUptimeSeconds()
+	if err != nil {
+		// Fallback: use a large base time if we can't read uptime
+		// This ensures expiry is in the future, but may cause issues with expiration
+		baseTime := uint64(1000000000000000000) // 10^18 nanoseconds
+		durationNs := uint64(durationSeconds) * 1000000000
+		expiry := baseTime + durationNs
+		return ml.whitelistMap.Put(ipUint32, expiry)
+	}
+	
+	// Convert uptime to nanoseconds and add duration
+	uptimeNs := uint64(uptimeSeconds * 1e9)
+	durationNs := uint64(durationSeconds) * 1000000000
+	expiry := uptimeNs + durationNs
+	
+	// Add a small buffer (1 second) to account for timing differences
+	expiry += 1000000000
+	
+	// Log for debugging (using fmt.Printf since we don't have log channel here)
+	fmt.Printf("[SPA] Whitelisting IP %s: uptime=%.2fs, duration=%ds, expiry=%d ns\n", 
+		ip.String(), uptimeSeconds, durationSeconds, expiry)
 
 	return ml.whitelistMap.Put(ipUint32, expiry)
+}
+
+// getUptimeSeconds reads system uptime from /proc/uptime
+func getUptimeSeconds() (float64, error) {
+	file, err := os.Open("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return 0, err
+	}
+
+	// /proc/uptime format: "uptime_seconds idle_seconds"
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("invalid /proc/uptime format")
+	}
+
+	uptime, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return uptime, nil
 }
 
 // RemoveWhitelistIP removes an IP from the whitelist
