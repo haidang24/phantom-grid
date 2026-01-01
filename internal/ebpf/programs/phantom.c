@@ -213,14 +213,16 @@ int phantom_prog(struct xdp_md *ctx) {
         if (udp->dest == bpf_htons(SPA_MAGIC_PORT)) {
             void *payload = (void *)(udp + 1);
             
+            // Check if packet matches default token
             if (verify_magic_packet(payload, data_end)) {
+                // Default token matched - whitelist in eBPF
                 spa_whitelist_ip(src_ip);
                 return XDP_DROP;
             } else {
-                __u32 key = 0;
-                __u64 *val = bpf_map_lookup_elem(&spa_auth_failed, &key);
-                if (val) __sync_fetch_and_add(val, 1);
-                return XDP_DROP;
+                // Token doesn't match default - pass to user-space handler
+                // User-space handler can check custom tokens
+                // This allows custom static tokens to work
+                return XDP_PASS;
             }
         }
         return XDP_PASS;

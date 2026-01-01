@@ -117,8 +117,17 @@ func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 			return
 		}
 		
-		h.logChan <- fmt.Sprintf("[SPA] Successfully authenticated and whitelisted IP: %s (static token)", clientIP)
+		h.logChan <- fmt.Sprintf("[SPA] Successfully authenticated and whitelisted IP: %s (static token, length: %d)", clientIP, len(packetData))
 		return
+	}
+	
+	// If not static packet and not dynamic packet, log for debugging
+	if len(packetData) > 0 {
+		debugLen := 8
+		if len(packetData) < debugLen {
+			debugLen = len(packetData)
+		}
+		h.logChan <- fmt.Sprintf("[SPA] Received non-matching packet from %s (length: %d, first bytes: %x)", clientIP, len(packetData), packetData[:debugLen])
 	}
 
 	// Parse dynamic packet
@@ -149,15 +158,24 @@ func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 func (h *Handler) isStaticPacket(data []byte) bool {
 	// Static token is ASCII string, dynamic packet starts with version byte (1)
 	staticTokenBytes := []byte(h.staticToken)
-	if len(data) == len(staticTokenBytes) {
-		for i := 0; i < len(data); i++ {
-			if data[i] != staticTokenBytes[i] {
-				return false
-			}
-		}
-		return true
+	
+	// Check length first
+	if len(data) != len(staticTokenBytes) {
+		return false
 	}
-	return false
+	
+	// Check if it's a dynamic packet (starts with version byte 1)
+	if len(data) > 0 && data[0] == 1 {
+		return false
+	}
+	
+	// Compare bytes
+	for i := 0; i < len(data); i++ {
+		if data[i] != staticTokenBytes[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // GetClientIPFromPacket extracts client IP from packet (for logging)
