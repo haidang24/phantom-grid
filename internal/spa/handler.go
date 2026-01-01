@@ -100,7 +100,24 @@ func (h *Handler) handlePackets() {
 func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 	// Check if packet is static or dynamic
 	if h.isStaticPacket(packetData) {
-		// Legacy static token - handled by eBPF
+		// Legacy static token - whitelist IP in user-space
+		if h.mapLoader == nil {
+			h.logChan <- fmt.Sprintf("[SPA] Static packet received but mapLoader not available")
+			return
+		}
+		
+		// Whitelist IP for static SPA (use default duration)
+		duration := config.SPAWhitelistDuration
+		if h.spaConfig != nil && h.spaConfig.ReplayWindowSeconds > 0 {
+			duration = h.spaConfig.ReplayWindowSeconds
+		}
+		
+		if err := h.mapLoader.WhitelistIP(clientIP, duration); err != nil {
+			h.logChan <- fmt.Sprintf("[SPA] Failed to whitelist IP %s for static SPA: %v", clientIP, err)
+			return
+		}
+		
+		h.logChan <- fmt.Sprintf("[SPA] Successfully authenticated and whitelisted IP: %s (static token)", clientIP)
 		return
 	}
 
