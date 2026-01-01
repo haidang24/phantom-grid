@@ -100,7 +100,9 @@ You now have 30 seconds to access protected services (e.g., SSH, FTP).
 
 ## Installation
 
-### From Source
+### Server Installation (Full Build)
+
+Requires: Go 1.21+, clang, llvm, libbpf-dev, make
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/phantom-grid.git
@@ -110,9 +112,27 @@ make build
 ```
 
 Binaries will be in `bin/`:
-- `bin/phantom-grid` - Main agent
+- `bin/phantom-grid` - Main agent (requires Linux, eBPF support)
 - `bin/spa-client` - SPA authentication client
 - `bin/phantom` - Interactive menu tool
+
+### Client Installation (Client Only)
+
+**Client only needs Go** - no eBPF dependencies required!
+
+```bash
+git clone https://github.com/YOUR_USERNAME/phantom-grid.git
+cd phantom-grid
+go mod tidy
+
+# Build only client (no eBPF needed)
+make build-client
+
+# Or manually:
+go build -o bin/spa-client ./cmd/spa-client
+```
+
+The client works on **Linux, Windows, and macOS** - no kernel dependencies!
 
 ### Docker
 
