@@ -54,10 +54,10 @@ Thumbs.db
 *.tmp
 *.temp
 
-# SPA Keys (never commit keys!)
-keys/
-*.key
-!*.key.example
+# # SPA Keys (never commit keys!)
+# keys/
+# *.key
+# !*.key.example
 
 # Docker
 .dockerignore.bak
