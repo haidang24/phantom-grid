@@ -28,86 +28,9 @@ const (
 // CriticalPortDefinitions is the single source of truth for protected ports
 // This list is used to generate both Go config and eBPF C code
 var CriticalPortDefinitions = []PortDefinition{
-	// Core Services
+	// Core Services - Only FTP and SSH are protected
+	{21, "FTP", "File Transfer Protocol", CategoryFile, "FTP_PORT"},
 	{22, "SSH", "Secure Shell", CategoryCore, "SSH_PORT"},
-
-	// Databases
-	{3306, "MySQL", "MySQL Database", CategoryDatabase, "MYSQL_PORT"},
-	{5432, "PostgreSQL", "PostgreSQL Database", CategoryDatabase, "POSTGRES_PORT"},
-	{5433, "PostgreSQL Alt", "PostgreSQL Alternative Port", CategoryDatabase, "POSTGRES_ALT_PORT"},
-	{27017, "MongoDB", "MongoDB Database", CategoryDatabase, "MONGODB_PORT"},
-	{27018, "MongoDB Shard", "MongoDB Shard Port", CategoryDatabase, "MONGODB_SHARD_PORT"},
-	{6379, "Redis", "Redis Cache/Database", CategoryDatabase, "REDIS_PORT"},
-	{1433, "MSSQL", "Microsoft SQL Server", CategoryDatabase, "MSSQL_PORT"},
-	{2702, "MSSQL Browser", "MSSQL Browser Service", CategoryDatabase, "MSSQL_BROWSER_PORT"},
-	{1434, "MSSQL Monitor", "MSSQL Monitor Service", CategoryDatabase, "MSSQL_MONITOR_PORT"},
-	{1521, "Oracle", "Oracle Database", CategoryDatabase, "ORACLE_PORT"},
-	{1527, "Derby", "Apache Derby Database", CategoryDatabase, "DERBY_PORT"},
-	{50000, "DB2", "IBM DB2 Database", CategoryDatabase, "DB2_PORT"},
-	{50001, "DB2 SSL", "IBM DB2 Database (SSL)", CategoryDatabase, "DB2_SSL_PORT"},
-
-	// Admin Panels & Management
-	{8080, "Admin Panel 1", "HTTP Admin Panel / Proxy", CategoryAdmin, "ADMIN_PANEL_PORT_1"},
-	{8443, "Admin Panel 2", "HTTPS Admin Panel", CategoryAdmin, "ADMIN_PANEL_PORT_2"},
-	{9000, "Admin Panel 3", "Admin Panel / Portainer", CategoryAdmin, "ADMIN_PANEL_PORT_3"},
-	{9200, "Elasticsearch", "Elasticsearch", CategoryAdmin, "ELASTICSEARCH_PORT"},
-	{5601, "Kibana", "Kibana Dashboard", CategoryAdmin, "KIBANA_PORT"},
-	{3000, "Grafana", "Grafana / Node.js", CategoryAdmin, "GRAFANA_PORT"},
-	{9090, "Prometheus", "Prometheus Metrics", CategoryAdmin, "PROMETHEUS_PORT"},
-	{9091, "Prometheus Push", "Prometheus Pushgateway", CategoryAdmin, "PROMETHEUS_PUSH_PORT"},
-	{15672, "RabbitMQ Mgmt", "RabbitMQ Management", CategoryAdmin, "RABBITMQ_MGMT_PORT"},
-	{25672, "RabbitMQ Mgmt Erlang", "RabbitMQ Management (Erlang)", CategoryAdmin, "RABBITMQ_MGMT_ERLANG_PORT"},
-	{5984, "CouchDB", "CouchDB", CategoryAdmin, "COUCHDB_PORT"},
-	{8161, "ActiveMQ Web", "ActiveMQ Web Console", CategoryAdmin, "ACTIVEMQ_WEB_PORT"},
-	{8162, "ActiveMQ Web SSL", "ActiveMQ Web Console (HTTPS)", CategoryAdmin, "ACTIVEMQ_WEB_SSL_PORT"},
-	{61616, "ActiveMQ", "ActiveMQ", CategoryAdmin, "ACTIVEMQ_PORT"},
-	{61617, "ActiveMQ SSL", "ActiveMQ (SSL)", CategoryAdmin, "ACTIVEMQ_SSL_PORT"},
-	{2181, "Zookeeper", "Apache Zookeeper", CategoryAdmin, "ZOOKEEPER_PORT"},
-	{7001, "WebLogic", "Oracle WebLogic", CategoryAdmin, "WEBLOGIC_PORT"},
-	{7002, "WebLogic SSL", "Oracle WebLogic (SSL)", CategoryAdmin, "WEBLOGIC_SSL_PORT"},
-	{4848, "GlassFish Admin", "GlassFish Admin Console", CategoryAdmin, "GLASSFISH_ADMIN_PORT"},
-	{4849, "GlassFish Admin SSL", "GlassFish Admin Console (HTTPS)", CategoryAdmin, "GLASSFISH_ADMIN_SSL_PORT"},
-	{9990, "WildFly Admin", "WildFly Admin Console", CategoryAdmin, "WILDFLY_ADMIN_PORT"},
-	{9993, "WildFly Admin SSL", "WildFly Admin Console (HTTPS)", CategoryAdmin, "WILDFLY_ADMIN_SSL_PORT"},
-
-	// Remote Access
-	{3389, "RDP", "Windows Remote Desktop", CategoryRemote, "RDP_PORT"},
-	{5985, "WinRM HTTP", "Windows Remote Management (HTTP)", CategoryRemote, "WINRM_HTTP_PORT"},
-	{5986, "WinRM HTTPS", "Windows Remote Management (HTTPS)", CategoryRemote, "WINRM_HTTPS_PORT"},
-
-	// Container Services
-	{2375, "Docker", "Docker (unencrypted)", CategoryContainer, "DOCKER_PORT"},
-	{2376, "Docker TLS", "Docker (TLS)", CategoryContainer, "DOCKER_TLS_PORT"},
-	{5000, "Docker Registry", "Docker Registry / Flask", CategoryContainer, "DOCKER_REGISTRY_PORT"},
-
-	// Application Frameworks
-	{3000, "Node.js", "Node.js / Grafana", CategoryApplication, "NODEJS_PORT"},
-	{5000, "Flask", "Flask / Docker Registry", CategoryApplication, "FLASK_PORT"},
-	{8000, "Django", "Django / Jupyter", CategoryApplication, "DJANGO_PORT"},
-	{8888, "Jupyter", "Jupyter Notebook", CategoryApplication, "JUPYTER_PORT"},
-
-	// Directory Services
-	{389, "LDAP", "LDAP", CategoryDirectory, "LDAP_PORT"},
-	{636, "LDAP SSL", "LDAP (SSL)", CategoryDirectory, "LDAP_SSL_PORT"},
-	{3268, "LDAP GC", "LDAP Global Catalog", CategoryDirectory, "LDAP_GC_PORT"},
-	{3269, "LDAP GC SSL", "LDAP Global Catalog (SSL)", CategoryDirectory, "LDAP_GC_SSL_PORT"},
-
-	// Cache Services
-	{11211, "Memcached", "Memcached", CategoryCache, "MEMCACHED_PORT"},
-	{11214, "Memcached SSL", "Memcached (SSL)", CategoryCache, "MEMCACHED_SSL_PORT"},
-
-	// File Services
-	{2049, "NFS", "Network File System", CategoryFile, "NFS_PORT"},
-	{111, "RPC Portmapper", "RPC Portmapper", CategoryFile, "RPC_PORTMAPPER_PORT"},
-
-	// Messaging Protocols
-	{1883, "MQTT", "MQTT", CategoryMessaging, "MQTT_PORT"},
-	{8883, "MQTT SSL", "MQTT (SSL)", CategoryMessaging, "MQTT_SSL_PORT"},
-	{61613, "STOMP", "STOMP", CategoryMessaging, "STOMP_PORT"},
-	{61614, "STOMP SSL", "STOMP (SSL)", CategoryMessaging, "STOMP_SSL_PORT"},
-	{5672, "RabbitMQ AMQP", "RabbitMQ AMQP", CategoryMessaging, "RABBITMQ_AMQP_PORT"},
-	{5671, "RabbitMQ AMQP SSL", "RabbitMQ AMQP (SSL)", CategoryMessaging, "RABBITMQ_AMQP_SSL_PORT"},
-	{4369, "Erlang Portmapper", "Erlang Port Mapper", CategoryMessaging, "ERLANG_PORTMAPPER_PORT"},
 }
 
 // FakePortDefinitions defines ports for honeypot deception
