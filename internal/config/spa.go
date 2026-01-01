@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
@@ -69,38 +70,47 @@ func GenerateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 
 // LoadKeysFromFile loads Ed25519 keys from files
 // If publicKeyPath is empty, only private key will be loaded
+// If privateKeyPath is empty, only public key will be loaded
 func LoadKeysFromFile(publicKeyPath, privateKeyPath string) (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	var publicKey ed25519.PublicKey
-	var publicKeyData []byte
-	var err error
+	var privateKey ed25519.PrivateKey
 
 	// Load public key if path is provided
 	if publicKeyPath != "" {
-		publicKeyData, err = os.ReadFile(publicKeyPath)
+		publicKeyData, err := os.ReadFile(publicKeyPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read public key: %w", err)
 		}
+		// Remove any whitespace/newlines
+		publicKeyData = bytes.TrimSpace(publicKeyData)
 		if len(publicKeyData) != ed25519.PublicKeySize {
 			return nil, nil, fmt.Errorf("invalid public key size: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyData))
 		}
 		publicKey = ed25519.PublicKey(publicKeyData)
 	}
 
-	// Load private key (required)
-	privateKeyData, err := os.ReadFile(privateKeyPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read private key: %w", err)
+	// Load private key if path is provided
+	if privateKeyPath != "" {
+		privateKeyData, err := os.ReadFile(privateKeyPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read private key: %w", err)
+		}
+		// Remove any whitespace/newlines
+		privateKeyData = bytes.TrimSpace(privateKeyData)
+		if len(privateKeyData) != ed25519.PrivateKeySize {
+			return nil, nil, fmt.Errorf("invalid private key size: expected %d, got %d", ed25519.PrivateKeySize, len(privateKeyData))
+		}
+		privateKey = ed25519.PrivateKey(privateKeyData)
+
+		// If public key was not loaded, derive it from private key
+		if publicKey == nil {
+			publicKey = privateKey.Public().(ed25519.PublicKey)
+		}
 	}
 
-	if len(privateKeyData) != ed25519.PrivateKeySize {
-		return nil, nil, fmt.Errorf("invalid private key size: expected %d, got %d", ed25519.PrivateKeySize, len(privateKeyData))
-	}
-
-	privateKey := ed25519.PrivateKey(privateKeyData)
-
-	// If public key was not loaded, derive it from private key
-	if publicKey == nil {
-		publicKey = privateKey.Public().(ed25519.PublicKey)
+	// At least one key must be loaded
+	if publicKey == nil && privateKey == nil {
+		return nil, nil, fmt.Errorf("at least one key path must be provided")
 	}
 
 	return publicKey, privateKey, nil

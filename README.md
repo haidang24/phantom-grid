@@ -46,6 +46,8 @@ sudo yum install -y clang llvm libbpf-devel golang make git
 
 ## Quick Start
 
+> **📖 Xem hướng dẫn chi tiết:** [`docs/QUICK_START.md`](docs/QUICK_START.md)
+
 ### 1. Clone and Build
 
 ```bash
