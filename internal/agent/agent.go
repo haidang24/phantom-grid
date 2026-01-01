@@ -172,8 +172,9 @@ func (a *Agent) initDynamicSPA() error {
 	// For now, we'll create a simplified map loader using existing maps
 	
 	// Create map loader (using existing maps as placeholders)
-	// TODO: Load dynamic SPA eBPF program and use its maps
-	// The dynamic SPA program needs to be compiled and loaded separately
+	// Note: Dynamic SPA eBPF program (phantom_spa_dynamic.c) is not yet fully integrated.
+	// The dynamic SPA program needs to be compiled and loaded separately.
+	// For now, we use the existing whitelist map from the main phantom program.
 	mapLoader := spa.NewMapLoader(
 		a.ebpfLoader.PhantomObjs.SpaWhitelist, // whitelist map
 		nil, // replay map (from dynamic SPA program - not available yet)

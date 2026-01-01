@@ -63,5 +63,3 @@ Thumbs.db
 .dockerignore.bak
 docker-compose.override.yml
 
-# Doc
-docs/

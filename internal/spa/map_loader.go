@@ -108,10 +108,6 @@ func (ml *MapLoader) WhitelistIP(ip net.IP, durationSeconds int) error {
 	
 	// Add a small buffer (1 second) to account for timing differences
 	expiry += 1000000000
-	
-	// Log for debugging (using fmt.Printf since we don't have log channel here)
-	fmt.Printf("[SPA] Whitelisting IP %s: uptime=%.2fs, duration=%ds, expiry=%d ns\n", 
-		ip.String(), uptimeSeconds, durationSeconds, expiry)
 
 	return ml.whitelistMap.Put(ipUint32, expiry)
 }

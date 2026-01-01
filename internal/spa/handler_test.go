@@ -16,7 +16,7 @@ func TestNewHandler(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil) // Mock map loader
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	if handler == nil {
 		t.Fatal("NewHandler returned nil")
@@ -37,7 +37,7 @@ func TestIsStaticPacket(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil)
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	// Test static token
 	staticToken := []byte(config.SPASecretToken)
@@ -90,7 +90,7 @@ func TestProcessPacket_ValidAsymmetric(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil) // Mock
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	// Process packet
 	clientIP := net.IPv4(192, 168, 1, 100)
@@ -113,7 +113,7 @@ func TestProcessPacket_InvalidPacket(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil)
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	// Process invalid packet
 	invalidPacket := make([]byte, 10)
@@ -138,7 +138,7 @@ func TestProcessPacket_StaticPacket(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil)
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	// Process static packet (should be ignored by handler)
 	staticToken := []byte(config.SPASecretToken)
@@ -161,7 +161,7 @@ func TestHandler_StartStop(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil)
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	// Start handler
 	err := handler.Start()
@@ -215,7 +215,7 @@ func TestProcessPacket_InvalidSignature(t *testing.T) {
 	mapLoader := NewMapLoader(nil, nil, nil, nil, nil)
 	logChan := make(chan string, 10)
 
-	handler := NewHandler(verifier, mapLoader, logChan, spaConfig)
+	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
 	// Process packet - should fail verification
 	clientIP := net.IPv4(192, 168, 1, 100)

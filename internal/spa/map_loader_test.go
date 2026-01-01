@@ -1,7 +1,6 @@
 package spa
 
 import (
-	"crypto/ed25519"
 	"net"
 	"testing"
 

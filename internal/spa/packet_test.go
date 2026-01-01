@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"testing"
 	"time"
-
-	"phantom-grid/internal/config"
 )
 
 func TestCreateAsymmetricPacket(t *testing.T) {
@@ -122,7 +120,7 @@ func TestTOTP(t *testing.T) {
 	// Test tolerance
 	// Generate TOTP for next time step
 	time.Sleep(31 * time.Second)
-	totp2 := GenerateTOTP(secret, 30)
+	_ = GenerateTOTP(secret, 30) // Generate but don't use (testing time progression)
 	
 	// Should still validate with tolerance
 	valid = ValidateTOTP(secret, 30, 1, totp1)
@@ -134,7 +132,7 @@ func TestTOTP(t *testing.T) {
 }
 
 func TestPacketObfuscation(t *testing.T) {
-	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
 	totpSecret := make([]byte, 32)
 	rand.Read(totpSecret)
 
