@@ -26,6 +26,8 @@ type Agent struct {
 	spaManager *spa.Manager
 	logChan    chan<- string
 	logManager *logger.Manager
+	spaConfig  *config.DynamicSPAConfig
+	spaHandler *spa.Handler
 }
 
 // New creates a new Agent instance
