@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"phantom-grid/internal/agent"
@@ -96,8 +97,27 @@ func main() {
 		
 		// Load TOTP secret if provided
 		if *spaTOTPSecretFlag != "" {
-			// TODO: Decode base64 secret
-			log.Printf("[!] TOTP secret loading not yet implemented")
+			totpSecretBytes := []byte(*spaTOTPSecretFlag)
+			// Remove newline if present
+			if len(totpSecretBytes) > 0 && totpSecretBytes[len(totpSecretBytes)-1] == '\n' {
+				totpSecretBytes = totpSecretBytes[:len(totpSecretBytes)-1]
+			}
+			spaConfig.TOTPSecret = totpSecretBytes
+			log.Printf("[SPA] TOTP secret loaded from command line")
+		} else {
+			// Try to load from file
+			totpSecretPath := fmt.Sprintf("%s/totp_secret.txt", *spaKeyDirFlag)
+			if totpSecretData, err := os.ReadFile(totpSecretPath); err == nil {
+				// Remove newline if present
+				if len(totpSecretData) > 0 && totpSecretData[len(totpSecretData)-1] == '\n' {
+					totpSecretData = totpSecretData[:len(totpSecretData)-1]
+				}
+				spaConfig.TOTPSecret = totpSecretData
+				log.Printf("[SPA] TOTP secret loaded from file: %s", totpSecretPath)
+			} else {
+				log.Printf("[!] Warning: TOTP secret not found at %s, using default (may cause authentication failures)", totpSecretPath)
+				log.Printf("[!] To fix: Create %s or use -spa-totp-secret flag", totpSecretPath)
+			}
 		}
 	}
 
