@@ -12,23 +12,41 @@ import (
 )
 
 func main() {
+	// Custom usage function
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "SPA Client - Single Packet Authorization Client\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  # Static SPA (legacy)\n")
+		fmt.Fprintf(os.Stderr, "  %s -server 192.168.1.100\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # Dynamic Asymmetric SPA\n")
+		fmt.Fprintf(os.Stderr, "  %s -server 192.168.1.100 -mode asymmetric\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # With custom key paths\n")
+		fmt.Fprintf(os.Stderr, "  %s -server 192.168.1.100 -mode asymmetric -key ~/.phantom-grid/spa_private.key -totp ~/.phantom-grid/totp_secret.txt\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "See docs/GETTING_STARTED.md for detailed instructions.\n")
+	}
+
 	// Parse command line arguments
 	serverIP := flag.String("server", "", "Server IP address (required)")
 	mode := flag.String("mode", "static", "SPA mode: 'static', 'dynamic', or 'asymmetric'")
-	keyPath := flag.String("key", "", "Path to private key file (required for asymmetric mode)")
-	totpSecretPath := flag.String("totp", "", "Path to TOTP secret file (optional)")
+	keyPath := flag.String("key", "", "Path to private key file (required for asymmetric mode). Default locations: ./keys/spa_private.key, ~/.phantom-grid/spa_private.key")
+	totpSecretPath := flag.String("totp", "", "Path to TOTP secret file (optional). Default: ./keys/totp_secret.txt")
+	helpFlag := flag.Bool("h", false, "Show help message")
+	helpFlag2 := flag.Bool("help", false, "Show help message")
+	
 	flag.Parse()
+
+	// Show help if requested
+	if *helpFlag || *helpFlag2 {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	// Validate server IP
 	if *serverIP == "" {
 		flag.Usage()
-		fmt.Println("\nExamples:")
-		fmt.Println("  Static SPA:")
-		fmt.Println("    ./spa-client -server 192.168.1.100")
-		fmt.Println("  Dynamic Asymmetric SPA:")
-		fmt.Println("    ./spa-client -server 192.168.1.100 -mode asymmetric -key ~/.phantom-grid/spa_private.key")
-		fmt.Println("  With TOTP:")
-		fmt.Println("    ./spa-client -server 192.168.1.100 -mode asymmetric -key ~/.phantom-grid/spa_private.key -totp ~/.phantom-grid/totp_secret.txt")
 		os.Exit(1)
 	}
 

@@ -46,36 +46,57 @@ sudo yum install -y clang llvm libbpf-devel golang make git
 
 ## Quick Start
 
-> **📖 Xem hướng dẫn chi tiết:** [`docs/QUICK_START.md`](docs/QUICK_START.md)
+> **📖 Xem hướng dẫn đầy đủ:** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
 
-### 1. Clone and Build
+### Option 1: Interactive Menu (Recommended)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/phantom-grid.git
-cd phantom-grid
-go mod tidy
+# Build all tools
+make build
+
+# Launch interactive menu
+./bin/phantom
+```
+
+The menu provides easy access to:
+- Key management (generate keys, view status)
+- Agent management (start/stop/configure)
+- SPA testing
+- Configuration management
+- System information
+- Documentation viewer
+
+### Option 2: Command Line
+
+### 1. Build
+
+```bash
 make build
 ```
 
-### 2. Run Phantom Grid
+### 2. Generate Keys
 
 ```bash
-# List network interfaces
-ip link show
-
-# Run with specific interface (recommended)
-sudo ./bin/phantom-grid -interface ens33
+go run ./cmd/spa-keygen -dir ./keys
+openssl rand -base64 32 > keys/totp_secret.txt
 ```
 
-### 3. Authenticate with SPA
-
-From another machine:
+### 3. Run Server
 
 ```bash
-./bin/spa-client SERVER_IP
+sudo ./bin/phantom-grid \
+  -interface ens33 \
+  -spa-mode asymmetric \
+  -spa-key-dir ./keys
 ```
 
-You now have 30 seconds to access protected services (e.g., SSH).
+### 4. Authenticate from Client
+
+```bash
+./bin/spa-client -server SERVER_IP -mode asymmetric
+```
+
+You now have 30 seconds to access protected services (e.g., SSH, FTP).
 
 ## Installation
 
@@ -91,6 +112,7 @@ make build
 Binaries will be in `bin/`:
 - `bin/phantom-grid` - Main agent
 - `bin/spa-client` - SPA authentication client
+- `bin/phantom` - Interactive menu tool
 
 ### Docker
 
@@ -164,18 +186,16 @@ Phantom Grid protects 60+ critical ports by default (SSH, databases, admin panel
 ### Dynamic SPA
 
 For advanced Single Packet Authorization with TOTP and Ed25519, see:
-- [`docs/DYNAMIC_SPA_USAGE_GUIDE.md`](docs/DYNAMIC_SPA_USAGE_GUIDE.md) - Complete usage guide
+- [`docs/DYNAMIC_SPA.md`](docs/DYNAMIC_SPA.md) - Dynamic SPA technical documentation
 - [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md) - Migration guide
 
 ## Documentation
 
-- **[`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md)** - **📱 Client setup guide (Copy keys, authenticate, connect)**
+- **[`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)** - **🚀 Complete getting started guide (Build, setup, run)**
 - **[`docs/SPA_TROUBLESHOOTING.md`](docs/SPA_TROUBLESHOOTING.md)** - **🔧 SPA troubleshooting guide (Common errors and solutions)**
-- **[`docs/RUNNING_WITH_INTERFACE.md`](docs/RUNNING_WITH_INTERFACE.md)** - **🌐 Complete guide: How to run agent with network interface**
 - **[`docs/PROJECT_COMPLETION_ASSESSMENT.md`](docs/PROJECT_COMPLETION_ASSESSMENT.md)** - **📊 Project completion assessment (85/100 - Very Good)**
 - **[`docs/SPA_MECHANISM_EXPLAINED.md`](docs/SPA_MECHANISM_EXPLAINED.md)** - **📖 Detailed explanation of SPA mechanism (Recommended for beginners)**
 - **[`docs/SPA_KEYS_MANAGEMENT.md`](docs/SPA_KEYS_MANAGEMENT.md)** - **🔑 Keys management guide (Generate, store, distribute)**
-- [`docs/DYNAMIC_SPA_USAGE_GUIDE.md`](docs/DYNAMIC_SPA_USAGE_GUIDE.md) - Dynamic SPA usage guide
 - [`docs/DYNAMIC_SPA.md`](docs/DYNAMIC_SPA.md) - Dynamic SPA technical documentation
 - [`docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md`](docs/MIGRATION_STATIC_TO_DYNAMIC_SPA.md) - Migration guide
 - [`docs/CONFIGURING_PORTS.md`](docs/CONFIGURING_PORTS.md) - Port configuration

@@ -17,6 +17,7 @@ build: generate
 	@mkdir -p bin
 	cd cmd/agent && go build -o ../../bin/phantom-grid .
 	cd cmd/spa-client && go build -o ../../bin/spa-client .
+	cd cmd/phantom && go build -o ../../bin/phantom .
 	@echo "Build complete: binaries in bin/"
 
 run: build
@@ -29,7 +30,7 @@ run-interface: build
 
 clean:
 	rm -rf bin/
-	rm -f phantom-grid spa-client
+	rm -f phantom-grid spa-client phantom
 	rm -f internal/ebpf/phantom_bpf*
 	rm -f internal/ebpf/egress_bpf*
 	rm -f internal/ebpf/programs/phantom_ports.h

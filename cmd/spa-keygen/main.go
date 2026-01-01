@@ -10,9 +10,36 @@ import (
 )
 
 func main() {
+	// Custom usage function
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "SPA Key Generator - Generate Ed25519 Key Pair for Dynamic SPA\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  # Generate keys in default directory (./keys)\n")
+		fmt.Fprintf(os.Stderr, "  %s\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # Generate keys in custom directory\n")
+		fmt.Fprintf(os.Stderr, "  %s -dir /etc/phantom-grid/keys\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # Overwrite existing keys\n")
+		fmt.Fprintf(os.Stderr, "  %s -force\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Output files:\n")
+		fmt.Fprintf(os.Stderr, "  - spa_public.key  (32 bytes) - Keep on server\n")
+		fmt.Fprintf(os.Stderr, "  - spa_private.key (64 bytes) - Distribute to clients securely\n")
+	}
+
 	keyDir := flag.String("dir", "./keys", "Directory to save keys")
 	force := flag.Bool("force", false, "Overwrite existing keys")
+	helpFlag := flag.Bool("h", false, "Show help message")
+	helpFlag2 := flag.Bool("help", false, "Show help message")
+	
 	flag.Parse()
+
+	// Show help if requested
+	if *helpFlag || *helpFlag2 {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	// Check if keys already exist
 	publicKeyPath := filepath.Join(*keyDir, "spa_public.key")

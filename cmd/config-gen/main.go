@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,6 +87,35 @@ type CategoryGroup struct {
 }
 
 func main() {
+	// Custom usage function
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Config Generator - Generate eBPF Configuration from Go Config\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "This tool reads port definitions from internal/config/ports.go and\n")
+		fmt.Fprintf(os.Stderr, "generates eBPF C header files (phantom_ports.h) and functions\n")
+		fmt.Fprintf(os.Stderr, "(phantom_ports_functions.c) for use in eBPF programs.\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  # Generate eBPF configuration\n")
+		fmt.Fprintf(os.Stderr, "  %s\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # Or use make\n")
+		fmt.Fprintf(os.Stderr, "  make generate-config\n\n")
+		fmt.Fprintf(os.Stderr, "Output files:\n")
+		fmt.Fprintf(os.Stderr, "  - internal/ebpf/programs/phantom_ports.h\n")
+		fmt.Fprintf(os.Stderr, "  - internal/ebpf/programs/phantom_ports_functions.c\n")
+	}
+
+	helpFlag := flag.Bool("h", false, "Show help message")
+	helpFlag2 := flag.Bool("help", false, "Show help message")
+	flag.Parse()
+
+	// Show help if requested
+	if *helpFlag || *helpFlag2 {
+		flag.Usage()
+		os.Exit(0)
+	}
+
 	// Validate configuration
 	if err := config.ValidatePorts(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Port validation failed: %v\n", err)
