@@ -167,6 +167,7 @@ For advanced Single Packet Authorization with TOTP and Ed25519, see:
 
 ## Documentation
 
+- **[`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md)** - **📱 Client setup guide (Copy keys, authenticate, connect)**
 - **[`docs/RUNNING_WITH_INTERFACE.md`](docs/RUNNING_WITH_INTERFACE.md)** - **🌐 Complete guide: How to run agent with network interface**
 - **[`docs/PROJECT_COMPLETION_ASSESSMENT.md`](docs/PROJECT_COMPLETION_ASSESSMENT.md)** - **📊 Project completion assessment (85/100 - Very Good)**
 - **[`docs/SPA_MECHANISM_EXPLAINED.md`](docs/SPA_MECHANISM_EXPLAINED.md)** - **📖 Detailed explanation of SPA mechanism (Recommended for beginners)**
