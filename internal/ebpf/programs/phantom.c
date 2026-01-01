@@ -22,6 +22,10 @@
 // ALL ports, SPA settings, and OS fingerprint values are defined in phantom_ports.h
 #include "phantom_ports.h"
 
+// Include auto-generated port checking functions
+// This file is generated from internal/config/ports.go by 'make generate-config'
+#include "phantom_ports_functions.c"
+
 // Standard protocol definitions (not configurable, part of IP specification)
 #ifndef IPPROTO_TCP
 #define IPPROTO_TCP 6
@@ -133,88 +137,8 @@ static __always_inline int is_spa_whitelisted(__be32 src_ip) {
     return 1;
 }
 
-// Helper: Check if port is a Critical Asset (protected by Phantom Protocol)
-// This function checks if a port requires SPA authentication before allowing access
-// IMPORTANT: Keep this list synchronized with CriticalPorts in internal/config/config.go
-// Ports are grouped by category for better performance and maintainability
-static __always_inline int is_critical_asset_port(__be16 port) {
-    __u16 p = bpf_ntohs(port);
-    
-    // Core services
-    if (p == SSH_PORT) return 1;
-    
-    // Databases (most common, check first)
-    if (p == MYSQL_PORT || p == POSTGRES_PORT || p == POSTGRES_ALT_PORT || 
-        p == MONGODB_PORT || p == MONGODB_SHARD_PORT || p == REDIS_PORT || 
-        p == MSSQL_PORT || p == MSSQL_BROWSER_PORT || p == MSSQL_MONITOR_PORT ||
-        p == ORACLE_PORT || p == DERBY_PORT || p == DB2_PORT || p == DB2_SSL_PORT) return 1;
-    
-    // Admin panels and management interfaces
-    if (p == ADMIN_PANEL_PORT_1 || p == ADMIN_PANEL_PORT_2 || p == ADMIN_PANEL_PORT_3 ||
-        p == ELASTICSEARCH_PORT || p == KIBANA_PORT || p == GRAFANA_PORT || 
-        p == PROMETHEUS_PORT || p == PROMETHEUS_PUSH_PORT || p == RABBITMQ_MGMT_PORT ||
-        p == RABBITMQ_MGMT_ERLANG_PORT || p == COUCHDB_PORT || p == ACTIVEMQ_WEB_PORT ||
-        p == ACTIVEMQ_WEB_SSL_PORT || p == ACTIVEMQ_PORT || p == ACTIVEMQ_SSL_PORT ||
-        p == ZOOKEEPER_PORT || p == WEBLOGIC_PORT || p == WEBLOGIC_SSL_PORT ||
-        p == GLASSFISH_ADMIN_PORT || p == GLASSFISH_ADMIN_SSL_PORT ||
-        p == WILDFLY_ADMIN_PORT || p == WILDFLY_ADMIN_SSL_PORT) return 1;
-    
-    // Remote access
-    if (p == RDP_PORT || p == WINRM_HTTP_PORT || p == WINRM_HTTPS_PORT) return 1;
-    
-    // Container/Docker services
-    if (p == DOCKER_PORT || p == DOCKER_TLS_PORT || p == DOCKER_REGISTRY_PORT) return 1;
-    
-    // Application frameworks (if used for admin interfaces)
-    if (p == NODEJS_PORT || p == FLASK_PORT || p == DJANGO_PORT || p == JUPYTER_PORT) return 1;
-    
-    // Directory services
-    if (p == LDAP_PORT || p == LDAP_SSL_PORT || p == LDAP_GC_PORT || p == LDAP_GC_SSL_PORT) return 1;
-    
-    // Cache services
-    if (p == MEMCACHED_PORT || p == MEMCACHED_SSL_PORT) return 1;
-    
-    // File services
-    if (p == NFS_PORT || p == RPC_PORTMAPPER_PORT) return 1;
-    
-    // Messaging protocols
-    if (p == MQTT_PORT || p == MQTT_SSL_PORT || p == STOMP_PORT || p == STOMP_SSL_PORT ||
-        p == RABBITMQ_AMQP_PORT || p == RABBITMQ_AMQP_SSL_PORT || p == ERLANG_PORTMAPPER_PORT) return 1;
-    
-    return 0;
-}
-
-// Check if port is a fake port (The Mirage - honeypot will bind these ports)
-// This list must match fakePorts in cmd/agent/main.go
-static __always_inline int is_fake_port(__be16 port) {
-    __u16 p = bpf_ntohs(port);
-    if (p == HONEYPOT_PORT) return 0;
-    
-    return (p == 80 ||      // HTTP
-            p == 443 ||     // HTTPS
-            p == 3306 ||    // MySQL (fake)
-            p == 5432 ||    // PostgreSQL (fake)
-            p == 6379 ||    // Redis (fake)
-            p == 27017 ||   // MongoDB (fake)
-            p == 8080 ||    // Admin Panel (fake)
-            p == 8443 ||    // HTTPS Alt (fake)
-            p == 9000 ||    // Admin Panel (fake)
-            p == 21 ||      // FTP (fake)
-            p == 23 ||      // Telnet (fake)
-            p == 3389 ||    // RDP (fake)
-            p == 5900 ||    // VNC (fake)
-            p == 1433 ||    // MSSQL (fake)
-            p == 1521 ||    // Oracle (fake)
-            p == 5433 ||    // PostgreSQL Alt (fake)
-            p == 11211 ||   // Memcached (fake)
-            p == 27018 ||   // MongoDB Shard (fake)
-            p == 9200 ||    // Elasticsearch (fake)
-            p == 5601 ||    // Kibana (fake)
-            p == 3000 ||    // Node.js (fake)
-            p == 5000 ||    // Flask (fake)
-            p == 8000 ||    // Django (fake)
-            p == 8888);     // Jupyter (fake)
-}
+// Port checking functions are now auto-generated in phantom_ports_functions.c
+// Do not define is_critical_asset_port() or is_fake_port() here - they are included above
 
 // Verify magic packet token
 static __always_inline int verify_magic_packet(void *payload, void *data_end) {
