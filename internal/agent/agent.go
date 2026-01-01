@@ -19,19 +19,20 @@ import (
 
 // Agent represents the main Phantom Grid agent
 type Agent struct {
-	ebpfLoader *ebpf.Loader
-	iface      *net.Interface
-	ifaceName  string
-	honeypot   *honeypot.Honeypot
-	spaManager *spa.Manager
-	logChan    chan<- string
-	logManager *logger.Manager
-	spaConfig  *config.DynamicSPAConfig
-	spaHandler *spa.Handler
+	ebpfLoader  *ebpf.Loader
+	iface       *net.Interface
+	ifaceName   string
+	honeypot    *honeypot.Honeypot
+	spaManager  *spa.Manager
+	logChan     chan<- string
+	logManager  *logger.Manager
+	spaConfig   *config.DynamicSPAConfig
+	spaHandler  *spa.Handler
+	staticToken string // Static token for legacy SPA mode
 }
 
 // New creates a new Agent instance
-func New(interfaceName string, outputMode config.OutputMode, elkConfig config.ELKConfiguration, dashboardChan chan<- string, spaConfig *config.DynamicSPAConfig) (*Agent, error) {
+func New(interfaceName string, outputMode config.OutputMode, elkConfig config.ELKConfiguration, dashboardChan chan<- string, spaConfig *config.DynamicSPAConfig, staticToken string) (*Agent, error) {
 	// Detect network interface
 	iface, ifaceName, err := network.DetectInterface(interfaceName)
 	if err != nil {
@@ -57,12 +58,13 @@ func New(interfaceName string, outputMode config.OutputMode, elkConfig config.EL
 	}
 
 	agent := &Agent{
-		ebpfLoader: ebpfLoader,
-		iface:      iface,
-		ifaceName:  ifaceName,
-		logChan:    logManager.LogChannel(),
-		logManager: logManager,
-		spaConfig:  spaConfig,
+		ebpfLoader:  ebpfLoader,
+		iface:       iface,
+		ifaceName:   ifaceName,
+		logChan:     logManager.LogChannel(),
+		logManager:  logManager,
+		spaConfig:   spaConfig,
+		staticToken: staticToken,
 	}
 
 	return agent, nil
@@ -98,11 +100,17 @@ func (a *Agent) Start() error {
 	a.spaManager = spa.NewManager(spaWrapper, a.logChan, config.SPAWhitelistDuration)
 	go a.spaManager.Start()
 
-	// Initialize Dynamic SPA if configured
+	// Initialize SPA handler
 	if a.spaConfig != nil && a.spaConfig.Mode != config.SPAModeStatic {
+		// Dynamic SPA mode
 		if err := a.initDynamicSPA(); err != nil {
 			log.Printf("[!] Warning: Failed to initialize dynamic SPA: %v", err)
 			log.Printf("[!] Falling back to static SPA mode")
+		}
+	} else {
+		// Static SPA mode - initialize handler with static token
+		if err := a.initStaticSPA(); err != nil {
+			log.Printf("[!] Warning: Failed to initialize static SPA handler: %v", err)
 		}
 	}
 
@@ -177,14 +185,45 @@ func (a *Agent) initDynamicSPA() error {
 		}
 	}
 
-	// Create and start handler
-	handler := spa.NewHandler(verifier, mapLoader, a.logChan, a.spaConfig)
+	// Create and start handler (static token not needed for dynamic mode)
+	handler := spa.NewHandler(verifier, mapLoader, a.logChan, a.spaConfig, "")
 	if err := handler.Start(); err != nil {
 		return fmt.Errorf("failed to start SPA handler: %w", err)
 	}
 
 	a.spaHandler = handler
 	a.logChan <- fmt.Sprintf("[SPA] Dynamic SPA initialized (mode: %s)", a.spaConfig.Mode)
+
+	return nil
+}
+
+// initStaticSPA initializes static SPA handler with configurable token
+func (a *Agent) initStaticSPA() error {
+	// Create a minimal config for static mode
+	staticConfig := config.DefaultDynamicSPAConfig()
+	staticConfig.Mode = config.SPAModeStatic
+
+	// Create verifier (not really used for static mode, but required by handler)
+	verifier := spa.NewVerifier(staticConfig)
+
+	// Create map loader (using existing whitelist map)
+	mapLoader := spa.NewMapLoader(
+		a.ebpfLoader.PhantomObjs.SpaWhitelist,
+		nil, nil, nil, nil, // Dynamic SPA maps not needed for static mode
+	)
+
+	// Create and start handler with static token
+	handler := spa.NewHandler(verifier, mapLoader, a.logChan, staticConfig, a.staticToken)
+	if err := handler.Start(); err != nil {
+		return fmt.Errorf("failed to start static SPA handler: %w", err)
+	}
+
+	a.spaHandler = handler
+	if a.staticToken != "" && a.staticToken != config.SPASecretToken {
+		a.logChan <- fmt.Sprintf("[SPA] Static SPA initialized with custom token (length: %d)", len(a.staticToken))
+	} else {
+		a.logChan <- fmt.Sprintf("[SPA] Static SPA initialized with default token")
+	}
 
 	return nil
 }

@@ -34,6 +34,7 @@ func main() {
 	mode := flag.String("mode", "static", "SPA mode: 'static', 'dynamic', or 'asymmetric'")
 	keyPath := flag.String("key", "", "Path to private key file (auto-detected if not specified). Searches: ./keys/spa_private.key, ~/.phantom-grid/spa_private.key")
 	totpSecretPath := flag.String("totp", "", "Path to TOTP secret file (auto-detected if not specified). Searches: ./keys/totp_secret.txt, ~/.phantom-grid/totp_secret.txt")
+	staticTokenFlag := flag.String("static-token", "", "Static SPA token (for static mode only). If not provided, uses default")
 	helpFlag := flag.Bool("h", false, "Show help message")
 	helpFlag2 := flag.Bool("help", false, "Show help message")
 	
@@ -53,13 +54,29 @@ func main() {
 
 	// Handle static mode (legacy)
 	if *mode == "static" {
-		client := spa.NewClient(*serverIP)
+		var token string
+		if *staticTokenFlag != "" {
+			token = *staticTokenFlag
+			fmt.Printf("[*] Using custom static token (length: %d)\n", len(token))
+		} else {
+			// Prompt for token
+			fmt.Print("[*] Enter static token (press Enter for default): ")
+			var input string
+			fmt.Scanln(&input)
+			if input != "" {
+				token = input
+			} else {
+				token = config.SPASecretToken
+			}
+		}
+
+		client := spa.NewClientWithToken(*serverIP, token)
 		fmt.Printf("[*] Sending Static SPA Magic Packet to %s:%d...\n", *serverIP, config.SPAMagicPort)
 		if err := client.SendMagicPacket(); err != nil {
 			fmt.Printf("[!] Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("[*] Sent %d bytes: %s\n", config.SPATokenLen, config.SPASecretToken)
+		fmt.Printf("[*] Sent %d bytes\n", len(token))
 		fmt.Println("[+] Magic Packet sent successfully!")
 		fmt.Printf("[+] Your IP has been whitelisted for %d seconds\n", config.SPAWhitelistDuration)
 		fmt.Println("[+] You can now connect to protected services:")

@@ -401,7 +401,14 @@ func startAgentInteractive() {
 	args = append(args, "-spa-mode", spaMode)
 	args = append(args, "-output", outputMode)
 
-	if spaMode != "static" {
+	if spaMode == "static" {
+		// For static mode, ask for token
+		staticToken := getUserInputWithDefault("Static token (press Enter to prompt later)", "")
+		if staticToken != "" {
+			args = append(args, "-spa-static-token", staticToken)
+		}
+	} else {
+		// For dynamic modes, ask for key directory
 		keyDir := getUserInputWithDefault("Key directory", "./keys")
 		args = append(args, "-spa-key-dir", keyDir)
 	}
@@ -694,11 +701,17 @@ func staticSPA() {
 		return
 	}
 
+	token := getUserInputWithDefault("Static token (press Enter for default)", "")
+
 	fmt.Println()
 	fmt.Println(menuColorCyan + "[*] Sending static SPA packet..." + menuColorReset)
 	fmt.Println()
 
 	args := []string{"run", "./cmd/spa-client", "-server", serverIP, "-mode", "static"}
+	if token != "" {
+		args = append(args, "-static-token", token)
+	}
+
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

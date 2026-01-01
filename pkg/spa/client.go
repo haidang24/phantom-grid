@@ -10,13 +10,26 @@ import (
 
 // Client represents an SPA client
 type Client struct {
-	ServerIP string
+	ServerIP   string
+	StaticToken string // Static token for legacy SPA mode
 }
 
 // NewClient creates a new SPA client
 func NewClient(serverIP string) *Client {
 	return &Client{
-		ServerIP: serverIP,
+		ServerIP:   serverIP,
+		StaticToken: config.SPASecretToken, // Default token
+	}
+}
+
+// NewClientWithToken creates a new SPA client with custom static token
+func NewClientWithToken(serverIP string, token string) *Client {
+	if token == "" {
+		token = config.SPASecretToken
+	}
+	return &Client{
+		ServerIP:   serverIP,
+		StaticToken: token,
 	}
 }
 
@@ -29,11 +42,7 @@ func (c *Client) SendMagicPacket() error {
 	}
 	defer conn.Close()
 
-	tokenBytes := []byte(config.SPASecretToken)
-	if len(tokenBytes) != config.SPATokenLen {
-		return fmt.Errorf("token length mismatch (expected %d, got %d)", config.SPATokenLen, len(tokenBytes))
-	}
-
+	tokenBytes := []byte(c.StaticToken)
 	_, err = conn.Write(tokenBytes)
 	if err != nil {
 		return fmt.Errorf("failed to send Magic Packet: %w", err)

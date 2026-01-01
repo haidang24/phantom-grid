@@ -11,22 +11,28 @@ import (
 
 // Handler handles dynamic SPA packet verification in user-space
 type Handler struct {
-	verifier   *Verifier
-	mapLoader  *MapLoader
-	logChan    chan<- string
-	spaConfig  *config.DynamicSPAConfig
-	udpConn    *net.UDPConn
-	stopChan   chan struct{}
+	verifier    *Verifier
+	mapLoader   *MapLoader
+	logChan     chan<- string
+	spaConfig   *config.DynamicSPAConfig
+	staticToken string // Static token for legacy SPA mode (configurable)
+	udpConn     *net.UDPConn
+	stopChan    chan struct{}
 }
 
 // NewHandler creates a new SPA packet handler
-func NewHandler(verifier *Verifier, mapLoader *MapLoader, logChan chan<- string, spaConfig *config.DynamicSPAConfig) *Handler {
+func NewHandler(verifier *Verifier, mapLoader *MapLoader, logChan chan<- string, spaConfig *config.DynamicSPAConfig, staticToken string) *Handler {
+	// Use default token if not provided
+	if staticToken == "" {
+		staticToken = config.SPASecretToken
+	}
 	return &Handler{
-		verifier:  verifier,
-		mapLoader: mapLoader,
-		logChan:   logChan,
-		spaConfig: spaConfig,
-		stopChan:  make(chan struct{}),
+		verifier:   verifier,
+		mapLoader:  mapLoader,
+		logChan:    logChan,
+		spaConfig:  spaConfig,
+		staticToken: staticToken,
+		stopChan:   make(chan struct{}),
 	}
 }
 
@@ -125,17 +131,14 @@ func (h *Handler) processPacket(packetData []byte, clientIP net.IP) {
 // isStaticPacket checks if packet is legacy static token
 func (h *Handler) isStaticPacket(data []byte) bool {
 	// Static token is ASCII string, dynamic packet starts with version byte (1)
-	if len(data) == int(config.SPATokenLen) {
-		// Check if it's the static token
-		staticToken := []byte(config.SPASecretToken)
-		if len(data) == len(staticToken) {
-			for i := 0; i < len(data); i++ {
-				if data[i] != staticToken[i] {
-					return false
-				}
+	staticTokenBytes := []byte(h.staticToken)
+	if len(data) == len(staticTokenBytes) {
+		for i := 0; i < len(data); i++ {
+			if data[i] != staticTokenBytes[i] {
+				return false
 			}
-			return true
 		}
+		return true
 	}
 	return false
 }

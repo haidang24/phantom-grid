@@ -46,6 +46,7 @@ func main() {
 	spaModeFlag := flag.String("spa-mode", "static", "SPA mode: 'static', 'dynamic', or 'asymmetric'")
 	spaKeyDirFlag := flag.String("spa-key-dir", "./keys", "Directory containing SPA keys")
 	spaTOTPSecretFlag := flag.String("spa-totp-secret", "", "TOTP secret (base64 encoded, 32 bytes). If not provided, auto-loads from keys/totp_secret.txt")
+	spaStaticTokenFlag := flag.String("spa-static-token", "", "Static SPA token (for static mode). If not provided, will prompt or use default")
 	
 	// Help flag
 	helpFlag := flag.Bool("h", false, "Show help message")
@@ -93,6 +94,27 @@ func main() {
 	var dashboardChan chan string
 	if outputMode == config.OutputModeDashboard || outputMode == config.OutputModeBoth {
 		dashboardChan = make(chan string, 1000)
+	}
+
+	// Handle static token for static mode
+	var staticToken string
+	if *spaModeFlag == "static" {
+		if *spaStaticTokenFlag != "" {
+			staticToken = *spaStaticTokenFlag
+			log.Printf("[SPA] Using custom static token (length: %d)", len(staticToken))
+		} else {
+			// Prompt for token if not provided
+			fmt.Print("[SPA] Enter static token (press Enter for default): ")
+			var input string
+			fmt.Scanln(&input)
+			if input != "" {
+				staticToken = input
+				log.Printf("[SPA] Using custom static token (length: %d)", len(staticToken))
+			} else {
+				staticToken = config.SPASecretToken
+				log.Printf("[SPA] Using default static token")
+			}
+		}
 	}
 
 	// Configure Dynamic SPA
@@ -151,7 +173,7 @@ func main() {
 	}
 
 	// Create and start agent
-	agentInstance, err := agent.New(*interfaceFlag, outputMode, elkConfig, dashboardChan, spaConfig)
+	agentInstance, err := agent.New(*interfaceFlag, outputMode, elkConfig, dashboardChan, spaConfig, staticToken)
 	if err != nil {
 		log.Fatalf("[!] Failed to initialize agent: %v", err)
 	}
