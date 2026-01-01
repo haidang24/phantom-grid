@@ -68,26 +68,49 @@ func GenerateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 }
 
 // LoadKeysFromFile loads Ed25519 keys from files
+// If publicKeyPath is empty, only private key will be loaded
 func LoadKeysFromFile(publicKeyPath, privateKeyPath string) (ed25519.PublicKey, ed25519.PrivateKey, error) {
-	publicKeyData, err := os.ReadFile(publicKeyPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read public key: %w", err)
+	var publicKey ed25519.PublicKey
+	var publicKeyData []byte
+	var err error
+
+	// Load public key if path is provided
+	if publicKeyPath != "" {
+		publicKeyData, err = os.ReadFile(publicKeyPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read public key: %w", err)
+		}
+		if len(publicKeyData) != ed25519.PublicKeySize {
+			return nil, nil, fmt.Errorf("invalid public key size: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyData))
+		}
+		publicKey = ed25519.PublicKey(publicKeyData)
 	}
 
+	// Load private key (required)
 	privateKeyData, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read private key: %w", err)
-	}
-
-	if len(publicKeyData) != ed25519.PublicKeySize {
-		return nil, nil, fmt.Errorf("invalid public key size: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyData))
 	}
 
 	if len(privateKeyData) != ed25519.PrivateKeySize {
 		return nil, nil, fmt.Errorf("invalid private key size: expected %d, got %d", ed25519.PrivateKeySize, len(privateKeyData))
 	}
 
-	return ed25519.PublicKey(publicKeyData), ed25519.PrivateKey(privateKeyData), nil
+	privateKey := ed25519.PrivateKey(privateKeyData)
+
+	// If public key was not loaded, derive it from private key
+	if publicKey == nil {
+		publicKey = privateKey.Public().(ed25519.PublicKey)
+	}
+
+	return publicKey, privateKey, nil
+}
+
+// LoadPrivateKeyFromFile loads only the private key from a file
+// This is a convenience function for clients that only need the private key
+func LoadPrivateKeyFromFile(privateKeyPath string) (ed25519.PrivateKey, error) {
+	_, privateKey, err := LoadKeysFromFile("", privateKeyPath)
+	return privateKey, err
 }
 
 // SaveKeysToFile saves Ed25519 keys to files
@@ -122,4 +145,5 @@ func GetSPAMode() SPAMode {
 	// Default to asymmetric for new installations
 	return SPAModeAsymmetric
 }
+
 
