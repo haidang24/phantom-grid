@@ -21,18 +21,19 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Static SPA (legacy)\n")
 		fmt.Fprintf(os.Stderr, "  %s -server 192.168.1.100\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  # Dynamic Asymmetric SPA\n")
+		fmt.Fprintf(os.Stderr, "  # Dynamic Asymmetric SPA (auto-detects keys)\n")
 		fmt.Fprintf(os.Stderr, "  %s -server 192.168.1.100 -mode asymmetric\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # With custom key paths\n")
 		fmt.Fprintf(os.Stderr, "  %s -server 192.168.1.100 -mode asymmetric -key ~/.phantom-grid/spa_private.key -totp ~/.phantom-grid/totp_secret.txt\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Note: Keys are auto-detected from default locations if not specified.\n")
 		fmt.Fprintf(os.Stderr, "See docs/GETTING_STARTED.md for detailed instructions.\n")
 	}
 
 	// Parse command line arguments
 	serverIP := flag.String("server", "", "Server IP address (required)")
 	mode := flag.String("mode", "static", "SPA mode: 'static', 'dynamic', or 'asymmetric'")
-	keyPath := flag.String("key", "", "Path to private key file (required for asymmetric mode). Default locations: ./keys/spa_private.key, ~/.phantom-grid/spa_private.key")
-	totpSecretPath := flag.String("totp", "", "Path to TOTP secret file (optional). Default: ./keys/totp_secret.txt")
+	keyPath := flag.String("key", "", "Path to private key file (auto-detected if not specified). Searches: ./keys/spa_private.key, ~/.phantom-grid/spa_private.key")
+	totpSecretPath := flag.String("totp", "", "Path to TOTP secret file (auto-detected if not specified). Searches: ./keys/totp_secret.txt, ~/.phantom-grid/totp_secret.txt")
 	helpFlag := flag.Bool("h", false, "Show help message")
 	helpFlag2 := flag.Bool("help", false, "Show help message")
 	
@@ -84,7 +85,7 @@ func main() {
 	// Load private key for asymmetric mode
 	if spaConfig.Mode == config.SPAModeAsymmetric {
 		if *keyPath == "" {
-			// Try default locations
+			// Try default locations automatically
 			defaultPaths := []string{
 				"./keys/spa_private.key",
 				filepath.Join(os.Getenv("HOME"), ".phantom-grid", "spa_private.key"),
@@ -93,13 +94,20 @@ func main() {
 			for _, path := range defaultPaths {
 				if _, err := os.Stat(path); err == nil {
 					*keyPath = path
+					fmt.Printf("[*] Auto-detected private key: %s\n", path)
 					break
 				}
 			}
 		}
 
 		if *keyPath == "" {
-			log.Fatal("Error: Private key required for asymmetric mode. Use -key flag or place key at ~/.phantom-grid/spa_private.key")
+			fmt.Fprintf(os.Stderr, "Error: Private key required for asymmetric mode.\n")
+			fmt.Fprintf(os.Stderr, "Searched in:\n")
+			fmt.Fprintf(os.Stderr, "  - ./keys/spa_private.key\n")
+			fmt.Fprintf(os.Stderr, "  - ~/.phantom-grid/spa_private.key\n")
+			fmt.Fprintf(os.Stderr, "  - $USERPROFILE/.phantom-grid/spa_private.key (Windows)\n")
+			fmt.Fprintf(os.Stderr, "\nUse -key flag to specify key path, or copy key to one of the above locations.\n")
+			os.Exit(1)
 		}
 
 		fmt.Printf("[*] Loading private key from %s...\n", *keyPath)
@@ -111,19 +119,39 @@ func main() {
 		fmt.Println("[+] Private key loaded")
 	}
 
-	// Load TOTP secret if provided
-	if *totpSecretPath != "" {
-		fmt.Printf("[*] Loading TOTP secret from %s...\n", *totpSecretPath)
-		totpSecret, err := os.ReadFile(*totpSecretPath)
-		if err != nil {
-			log.Fatalf("Failed to load TOTP secret: %v\nMake sure the secret file exists", err)
+	// Load TOTP secret - try auto-detect if not provided
+	if spaConfig.Mode == config.SPAModeAsymmetric || spaConfig.Mode == config.SPAModeDynamic {
+		if *totpSecretPath == "" {
+			// Try default locations automatically
+			defaultTotpPaths := []string{
+				"./keys/totp_secret.txt",
+				filepath.Join(os.Getenv("HOME"), ".phantom-grid", "totp_secret.txt"),
+				filepath.Join(os.Getenv("USERPROFILE"), ".phantom-grid", "totp_secret.txt"), // Windows
+			}
+			for _, path := range defaultTotpPaths {
+				if _, err := os.Stat(path); err == nil {
+					*totpSecretPath = path
+					fmt.Printf("[*] Auto-detected TOTP secret: %s\n", path)
+					break
+				}
+			}
 		}
-		// Remove newline if present
-		if len(totpSecret) > 0 && totpSecret[len(totpSecret)-1] == '\n' {
-			totpSecret = totpSecret[:len(totpSecret)-1]
+
+		if *totpSecretPath != "" {
+			fmt.Printf("[*] Loading TOTP secret from %s...\n", *totpSecretPath)
+			totpSecret, err := os.ReadFile(*totpSecretPath)
+			if err != nil {
+				log.Fatalf("Failed to load TOTP secret: %v\nMake sure the secret file exists", err)
+			}
+			// Remove newline if present
+			if len(totpSecret) > 0 && totpSecret[len(totpSecret)-1] == '\n' {
+				totpSecret = totpSecret[:len(totpSecret)-1]
+			}
+			spaConfig.TOTPSecret = totpSecret
+			fmt.Println("[+] TOTP secret loaded")
+		} else {
+			fmt.Println("[!] Warning: TOTP secret not found. Authentication may fail if server requires it.")
 		}
-		spaConfig.TOTPSecret = totpSecret
-		fmt.Println("[+] TOTP secret loaded")
 	}
 
 	// Create dynamic client

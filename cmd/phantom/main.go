@@ -353,15 +353,47 @@ func handleAgentManagement() {
 	}
 }
 
+func isRoot() bool {
+	if runtime.GOOS == "windows" {
+		// On Windows, check if running as administrator
+		// Try to open a system device that requires admin privileges
+		_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
+		return err == nil
+	}
+	// On Unix-like systems, check if UID is 0
+	// Note: os.Geteuid() may not be available on all systems, but it's standard on Linux
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "freebsd" {
+		return os.Geteuid() == 0
+	}
+	// For other Unix-like systems, assume not root if we can't check
+	return false
+}
+
 func startAgentInteractive() {
 	fmt.Println("\n" + menuColorCyan + "[*] Starting agent interactively..." + menuColorReset)
+
+	// Check platform
+	if runtime.GOOS == "windows" {
+		fmt.Println(menuColorRed + "[!] ERROR: Phantom Grid agent requires Linux with eBPF/XDP support." + menuColorReset)
+		fmt.Println(menuColorYellow + "[*] eBPF/XDP is not available on Windows." + menuColorReset)
+		fmt.Println(menuColorCyan + "[*] Please run the agent on a Linux system (kernel 5.4+)." + menuColorReset)
+		pause()
+		return
+	}
+
+	// Check if running as root
+	if !isRoot() {
+		fmt.Println(menuColorYellow + "[!] Warning: Agent requires root privileges for eBPF/XDP operations." + menuColorReset)
+		fmt.Println(menuColorCyan + "[*] The command will be run with 'sudo'. You may be prompted for your password." + menuColorReset)
+		fmt.Println()
+	}
 
 	// Get configuration
 	interfaceName := getUserInputWithDefault("Network interface", "")
 	spaMode := getUserInputWithDefault("SPA mode (static/dynamic/asymmetric)", "asymmetric")
 	outputMode := getUserInputWithDefault("Output mode (dashboard/elk/both)", "dashboard")
 
-	// Build command
+	// Build command arguments
 	args := []string{"run", "./cmd/agent"}
 	if interfaceName != "" {
 		args = append(args, "-interface", interfaceName)
@@ -379,19 +411,47 @@ func startAgentInteractive() {
 		args = append(args, "-elk-address", elkAddr)
 	}
 
-	fmt.Println()
-	fmt.Println(menuColorYellow + "[*] Starting agent with: " + strings.Join(args, " ") + menuColorReset)
+	// Build command - use sudo if not root
+	var cmd *exec.Cmd
+	if !isRoot() {
+		// Need to use sudo - preserve environment with -E flag
+		sudoArgs := append([]string{"-E", "go"}, args...)
+		cmd = exec.Command("sudo", sudoArgs...)
+		fmt.Println()
+		fmt.Println(menuColorYellow + "[*] Running with sudo: sudo go " + strings.Join(args, " ") + menuColorReset)
+	} else {
+		// Already root
+		cmd = exec.Command("go", args...)
+		fmt.Println()
+		fmt.Println(menuColorYellow + "[*] Starting agent with: go " + strings.Join(args, " ") + menuColorReset)
+	}
+
 	fmt.Println(menuColorYellow + "[*] Press Ctrl+C to stop" + menuColorReset)
 	fmt.Println()
 
-	// Run agent
-	cmd := exec.Command("go", args...)
+	// Set up command I/O
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
+	// Run agent
 	if err := cmd.Run(); err != nil {
-		fmt.Println(menuColorRed + "[!] Agent stopped: " + err.Error() + menuColorReset)
+		fmt.Println()
+		fmt.Println(menuColorRed + "[!] Agent failed to start. Possible reasons:" + menuColorReset)
+		if !isRoot() {
+			fmt.Println(menuColorYellow + "    1. Permission denied - sudo password may be required or incorrect" + menuColorReset)
+		}
+		fmt.Println(menuColorYellow + "    2. eBPF not supported - requires Linux kernel 5.4+" + menuColorReset)
+		fmt.Println(menuColorYellow + "    3. Interface not found - check interface name" + menuColorReset)
+		fmt.Println(menuColorYellow + "    4. Missing dependencies - ensure clang, llvm, libbpf-dev are installed" + menuColorReset)
+		fmt.Println()
+		if !isRoot() {
+			fmt.Println(menuColorCyan + "[*] Try running manually: sudo go run ./cmd/agent -interface " + interfaceName + menuColorReset)
+		} else {
+			fmt.Println(menuColorCyan + "[*] Try running manually: go run ./cmd/agent -interface " + interfaceName + menuColorReset)
+		}
+		fmt.Println()
+		fmt.Println(menuColorRed + "[!] Error details: " + err.Error() + menuColorReset)
 	}
 
 	pause()
@@ -454,9 +514,131 @@ func configureAgent() {
 }
 
 func handleSPATest() {
+	for {
+		clearScreen()
+		fmt.Println(menuColorBold + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
+		fmt.Println(menuColorBold + "                            SPA TESTING" + menuColorReset)
+		fmt.Println(menuColorBold + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
+		fmt.Println()
+		fmt.Println("  [1] Quick Send (Auto-detect keys)")
+		fmt.Println("  [2] Custom Configuration")
+		fmt.Println("  [3] Static SPA (Legacy)")
+		fmt.Println("  [0] Back to Main Menu")
+		fmt.Println()
+
+		choice := getUserInput("Select an option: ")
+
+		switch choice {
+		case "1":
+			quickSendSPA()
+		case "2":
+			customSPA()
+		case "3":
+			staticSPA()
+		case "0":
+			return
+		default:
+			fmt.Println(menuColorRed + "[!] Invalid option." + menuColorReset)
+			pause()
+		}
+	}
+}
+
+func quickSendSPA() {
 	clearScreen()
 	fmt.Println(menuColorBold + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
-	fmt.Println(menuColorBold + "                            SPA TESTING" + menuColorReset)
+	fmt.Println(menuColorBold + "                         QUICK SPA SEND" + menuColorReset)
+	fmt.Println(menuColorBold + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
+	fmt.Println()
+
+	serverIP := getUserInput("Server IP address: ")
+	if serverIP == "" {
+		fmt.Println(menuColorRed + "[!] Server IP is required." + menuColorReset)
+		pause()
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(menuColorCyan + "[*] Auto-detecting keys..." + menuColorReset)
+
+	// Try to find keys automatically
+	keyPaths := []string{
+		"./keys/spa_private.key",
+		filepath.Join(os.Getenv("HOME"), ".phantom-grid", "spa_private.key"),
+		filepath.Join(os.Getenv("USERPROFILE"), ".phantom-grid", "spa_private.key"), // Windows
+	}
+
+	var keyPath string
+	for _, path := range keyPaths {
+		if _, err := os.Stat(path); err == nil {
+			keyPath = path
+			fmt.Println(menuColorGreen + "[+] Found private key: " + path + menuColorReset)
+			break
+		}
+	}
+
+	if keyPath == "" {
+		fmt.Println(menuColorRed + "[!] Private key not found in default locations:" + menuColorReset)
+		for _, path := range keyPaths {
+			fmt.Println(menuColorYellow + "    - " + path + menuColorReset)
+		}
+		fmt.Println()
+		fmt.Println(menuColorCyan + "[*] Please copy keys from server or use Custom Configuration option." + menuColorReset)
+		pause()
+		return
+	}
+
+	// Try to find TOTP secret
+	totpPaths := []string{
+		"./keys/totp_secret.txt",
+		filepath.Join(os.Getenv("HOME"), ".phantom-grid", "totp_secret.txt"),
+		filepath.Join(os.Getenv("USERPROFILE"), ".phantom-grid", "totp_secret.txt"), // Windows
+	}
+
+	var totpPath string
+	for _, path := range totpPaths {
+		if _, err := os.Stat(path); err == nil {
+			totpPath = path
+			fmt.Println(menuColorGreen + "[+] Found TOTP secret: " + path + menuColorReset)
+			break
+		}
+	}
+
+	if totpPath == "" {
+		fmt.Println(menuColorYellow + "[!] TOTP secret not found. Sending without TOTP (may fail if server requires it)." + menuColorReset)
+	}
+
+	fmt.Println()
+	fmt.Println(menuColorCyan + "[*] Sending SPA packet to " + serverIP + "..." + menuColorReset)
+	fmt.Println()
+
+	// Build command
+	args := []string{"run", "./cmd/spa-client", "-server", serverIP, "-mode", "asymmetric", "-key", keyPath}
+	if totpPath != "" {
+		args = append(args, "-totp", totpPath)
+	}
+
+	cmd := exec.Command("go", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Println()
+		fmt.Println(menuColorRed + "[!] SPA send failed: " + err.Error() + menuColorReset)
+		fmt.Println(menuColorYellow + "[*] Check:" + menuColorReset)
+		fmt.Println(menuColorYellow + "    1. Server is running and accessible" + menuColorReset)
+		fmt.Println(menuColorYellow + "    2. Keys match between client and server" + menuColorReset)
+		fmt.Println(menuColorYellow + "    3. TOTP secret matches (if used)" + menuColorReset)
+		fmt.Println(menuColorYellow + "    4. Firewall allows UDP port " + fmt.Sprintf("%d", config.SPAMagicPort) + menuColorReset)
+	}
+
+	pause()
+}
+
+func customSPA() {
+	clearScreen()
+	fmt.Println(menuColorBold + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
+	fmt.Println(menuColorBold + "                      CUSTOM SPA CONFIGURATION" + menuColorReset)
 	fmt.Println(menuColorBold + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
 	fmt.Println()
 
@@ -475,21 +657,54 @@ func handleSPATest() {
 		keyPath := getUserInputWithDefault("Private key path", "./keys/spa_private.key")
 		args = append(args, "-key", keyPath)
 
-		totpPath := getUserInputWithDefault("TOTP secret path (optional)", "./keys/totp_secret.txt")
+		totpPath := getUserInputWithDefault("TOTP secret path (press Enter to skip)", "")
 		if totpPath != "" {
 			args = append(args, "-totp", totpPath)
 		}
 	}
 
 	fmt.Println()
-	fmt.Println(menuColorCyan + "[*] Testing SPA connection..." + menuColorReset)
+	fmt.Println(menuColorCyan + "[*] Sending SPA packet..." + menuColorReset)
+	fmt.Println()
 
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Println(menuColorRed + "[!] SPA test failed: " + err.Error() + menuColorReset)
+		fmt.Println(menuColorRed + "[!] SPA send failed: " + err.Error() + menuColorReset)
+	}
+
+	pause()
+}
+
+func staticSPA() {
+	clearScreen()
+	fmt.Println(menuColorBold + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
+	fmt.Println(menuColorBold + "                         STATIC SPA (LEGACY)" + menuColorReset)
+	fmt.Println(menuColorBold + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + menuColorReset)
+	fmt.Println()
+	fmt.Println(menuColorYellow + "[!] Warning: Static SPA is less secure. Use Dynamic Asymmetric SPA for production." + menuColorReset)
+	fmt.Println()
+
+	serverIP := getUserInput("Server IP address: ")
+	if serverIP == "" {
+		fmt.Println(menuColorRed + "[!] Server IP is required." + menuColorReset)
+		pause()
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(menuColorCyan + "[*] Sending static SPA packet..." + menuColorReset)
+	fmt.Println()
+
+	args := []string{"run", "./cmd/spa-client", "-server", serverIP, "-mode", "static"}
+	cmd := exec.Command("go", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Println(menuColorRed + "[!] SPA send failed: " + err.Error() + menuColorReset)
 	}
 
 	pause()
