@@ -109,8 +109,12 @@ func (a *Agent) Start() error {
 		}
 	} else {
 		// Static SPA mode - initialize handler with static token
+		log.Printf("[SPA] Initializing static SPA handler...")
 		if err := a.initStaticSPA(); err != nil {
 			log.Printf("[!] Warning: Failed to initialize static SPA handler: %v", err)
+			a.logChan <- fmt.Sprintf("[!] Warning: Failed to initialize static SPA handler: %v", err)
+		} else {
+			log.Printf("[SPA] Static SPA handler initialized successfully")
 		}
 	}
 
@@ -221,8 +225,10 @@ func (a *Agent) initStaticSPA() error {
 	a.spaHandler = handler
 	if a.staticToken != "" && a.staticToken != config.SPASecretToken {
 		a.logChan <- fmt.Sprintf("[SPA] Static SPA initialized with custom token (length: %d)", len(a.staticToken))
+		log.Printf("[SPA] Static SPA initialized with custom token (length: %d)", len(a.staticToken))
 	} else {
 		a.logChan <- fmt.Sprintf("[SPA] Static SPA initialized with default token")
+		log.Printf("[SPA] Static SPA initialized with default token: %s", config.SPASecretToken)
 	}
 
 	return nil
