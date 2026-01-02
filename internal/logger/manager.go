@@ -50,8 +50,8 @@ func (m *Manager) LogChannel() chan<- string {
 // processLogs processes logs and routes them to dashboard and/or ELK
 func (m *Manager) processLogs() {
 	for msg := range m.logChan {
-		// Route to dashboard if enabled
-		if m.outputMode == config.OutputModeDashboard || m.outputMode == config.OutputModeBoth {
+		// Route to dashboard/web if enabled
+		if m.outputMode == config.OutputModeDashboard || m.outputMode == config.OutputModeBoth || m.outputMode == config.OutputModeWeb {
 			if m.dashboardChan != nil {
 				select {
 				case m.dashboardChan <- msg:
@@ -139,8 +139,8 @@ func (m *Manager) parseLogMessage(msg string) *SecurityEvent {
 
 // LogEvent logs a structured security event
 func (m *Manager) LogEvent(event *SecurityEvent) {
-	// Send to dashboard as formatted message
-	if m.outputMode == config.OutputModeDashboard || m.outputMode == config.OutputModeBoth {
+	// Send to dashboard/web as formatted message
+	if m.outputMode == config.OutputModeDashboard || m.outputMode == config.OutputModeBoth || m.outputMode == config.OutputModeWeb {
 		if m.dashboardChan != nil {
 			msg := fmt.Sprintf("[%s] %s", event.EventType, event.Message)
 			if event.SourceIP != "" {

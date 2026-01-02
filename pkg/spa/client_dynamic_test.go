@@ -3,6 +3,7 @@ package spa
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -152,7 +153,7 @@ func TestSendMagicPacket_AsymmetricMode(t *testing.T) {
 	}
 
 	// Override server port for testing
-	client.ServerIP = net.JoinHostPort("127.0.0.1", string(rune(serverPort)))
+	client.ServerIP = net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", serverPort))
 
 	// Send packet in goroutine
 	done := make(chan error, 1)
@@ -213,6 +214,9 @@ func TestSendMagicPacket_DynamicMode(t *testing.T) {
 	}
 	defer serverConn.Close()
 
+	// Get the actual port
+	serverPort := serverConn.LocalAddr().(*net.UDPAddr).Port
+
 	// Create secrets
 	hmacSecret := make([]byte, 32)
 	totpSecret := make([]byte, 32)
@@ -230,6 +234,9 @@ func TestSendMagicPacket_DynamicMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
+
+	// Override server port for testing
+	client.ServerIP = net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", serverPort))
 
 	// Send packet in goroutine
 	done := make(chan error, 1)

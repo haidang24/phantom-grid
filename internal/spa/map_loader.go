@@ -21,17 +21,19 @@ type MapLoader struct {
 	totpSecretMap   *ebpf.Map
 	hmacSecretMap   *ebpf.Map
 	configMap       *ebpf.Map
+	failedMap       *ebpf.Map // Map for tracking failed authentication attempts
 }
 
 // NewMapLoader creates a new SPA map loader
 // Note: Maps must be from the dynamic SPA eBPF program
-func NewMapLoader(whitelistMap, replayMap, totpSecretMap, hmacSecretMap, configMap *ebpf.Map) *MapLoader {
+func NewMapLoader(whitelistMap, replayMap, totpSecretMap, hmacSecretMap, configMap, failedMap *ebpf.Map) *MapLoader {
 	return &MapLoader{
 		whitelistMap:  whitelistMap,
 		replayMap:     replayMap,
 		totpSecretMap: totpSecretMap,
 		hmacSecretMap: hmacSecretMap,
 		configMap:     configMap,
+		failedMap:     failedMap,
 	}
 }
 
@@ -202,5 +204,24 @@ func (ml *MapLoader) getSPAModeValue(mode config.SPAMode) uint32 {
 	default:
 		return 0 // Default to static
 	}
+}
+
+// IncrementFailedCounter increments the failed authentication counter in eBPF map
+func (ml *MapLoader) IncrementFailedCounter() {
+	if ml.failedMap == nil {
+		return
+	}
+	
+	var key uint32 = 0
+	var currentVal uint64 = 0
+	
+	// Read current value
+	_ = ml.failedMap.Lookup(key, &currentVal)
+	
+	// Increment
+	currentVal++
+	
+	// Update map
+	_ = ml.failedMap.Update(key, currentVal, ebpf.UpdateAny)
 }
 

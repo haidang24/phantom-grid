@@ -96,35 +96,45 @@ func (d *Dashboard) updateStatistics(w *DashboardWidgets, lastAttackCount *uint6
 	var attackKey uint32 = 0
 	var attackVal uint64
 	if err := d.phantomObjs.AttackStats.Lookup(attackKey, &attackVal); err == nil {
-		w.redirectedBox.Text = fmt.Sprintf("\n\n   %d", attackVal)
+		w.redirectedBox.Text = fmt.Sprintf("\n\n   %d\n\n   Total Attacks", attackVal)
 
 		if attackVal > *lastAttackCount {
 			*lastAttackCount = attackVal
 		}
+	} else {
+		w.redirectedBox.Text = "\n\n   0\n\n   Total Attacks"
 	}
 
 	var stealthKey uint32 = 0
 	var stealthVal uint64
 	if err := d.phantomObjs.StealthDrops.Lookup(stealthKey, &stealthVal); err == nil {
-		w.stealthBox.Text = fmt.Sprintf("\n\n   %d", stealthVal)
+		w.stealthBox.Text = fmt.Sprintf("\n\n   %d\n\n   Stealth Scans", stealthVal)
+	} else {
+		w.stealthBox.Text = "\n\n   0\n\n   Stealth Scans"
 	}
 
 	var osKey uint32 = 0
 	var osVal uint64
 	if err := d.phantomObjs.OsMutations.Lookup(osKey, &osVal); err == nil {
-		w.osMutationsBox.Text = fmt.Sprintf("\n\n   %d", osVal)
+		w.osMutationsBox.Text = fmt.Sprintf("\n\n   %d\n\n   OS Mutations", osVal)
+	} else {
+		w.osMutationsBox.Text = "\n\n   0\n\n   OS Mutations"
 	}
 
 	var spaSuccessKey uint32 = 0
 	var spaSuccessVal uint64
 	if err := d.phantomObjs.SpaAuthSuccess.Lookup(spaSuccessKey, &spaSuccessVal); err == nil {
-		w.spaSuccessBox.Text = fmt.Sprintf("\n\n   %d", spaSuccessVal)
+		w.spaSuccessBox.Text = fmt.Sprintf("\n\n   %d\n\n   Successful", spaSuccessVal)
+	} else {
+		w.spaSuccessBox.Text = "\n\n   0\n\n   Successful"
 	}
 
 	var spaFailedKey uint32 = 0
 	var spaFailedVal uint64
 	if err := d.phantomObjs.SpaAuthFailed.Lookup(spaFailedKey, &spaFailedVal); err == nil {
-		w.spaFailedBox.Text = fmt.Sprintf("\n\n   %d", spaFailedVal)
+		w.spaFailedBox.Text = fmt.Sprintf("\n\n   %d\n\n   Failed", spaFailedVal)
+	} else {
+		w.spaFailedBox.Text = "\n\n   0\n\n   Failed"
 	}
 
 	if d.egressObjs != nil && d.egressObjs.EgressBlocks != nil {
@@ -172,8 +182,10 @@ func (d *Dashboard) updateStatistics(w *DashboardWidgets, lastAttackCount *uint6
 // handleLogMessage processes log messages and updates UI
 func (d *Dashboard) handleLogMessage(msg string, w *DashboardWidgets, paused bool, autoScroll *bool) {
 	if !paused {
-		w.logList.Rows = append(w.logList.Rows, msg)
-		maxLogs := 500 // Keep reasonable history
+		// Format message with timestamp and colors
+		formattedMsg := FormatLogMessage(msg)
+		w.logList.Rows = append(w.logList.Rows, formattedMsg)
+		maxLogs := 1000 // Keep more history for detailed logs
 		if len(w.logList.Rows) > maxLogs {
 			w.logList.Rows = w.logList.Rows[len(w.logList.Rows)-maxLogs:]
 		}

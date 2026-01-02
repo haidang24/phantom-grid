@@ -51,7 +51,15 @@ func NewDynamicClient(serverIP string, spaConfig *config.DynamicSPAConfig) (*Dyn
 
 // SendMagicPacket sends a dynamic SPA packet
 func (c *DynamicClient) SendMagicPacket() error {
-	addr := net.JoinHostPort(c.ServerIP, fmt.Sprintf("%d", config.SPAMagicPort))
+	var addr string
+	// Check if ServerIP already contains a port
+	if _, _, err := net.SplitHostPort(c.ServerIP); err == nil {
+		// ServerIP already has a port, use it directly
+		addr = c.ServerIP
+	} else {
+		// ServerIP is just an IP/hostname, append default port
+		addr = net.JoinHostPort(c.ServerIP, fmt.Sprintf("%d", config.SPAMagicPort))
+	}
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to create UDP connection: %w", err)

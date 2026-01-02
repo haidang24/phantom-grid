@@ -21,6 +21,11 @@ func NewVerifier(spaConfig *config.DynamicSPAConfig) *Verifier {
 
 // VerifyPacket verifies a received SPA packet
 func (v *Verifier) VerifyPacket(packetData []byte) (bool, error) {
+	// Check if spaConfig is nil
+	if v.spaConfig == nil {
+		return false, fmt.Errorf("SPA config not initialized")
+	}
+
 	// Parse packet
 	packet, err := ParseSPAPacket(packetData)
 	if err != nil {

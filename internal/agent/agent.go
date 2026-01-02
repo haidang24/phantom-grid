@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -158,7 +159,95 @@ func (a *Agent) Start() error {
 		// Honeypot started successfully
 	}
 
+	// Start monitoring eBPF maps for events
+	go a.monitorEBPFMaps()
+
 	return nil
+}
+
+// monitorEBPFMaps monitors eBPF maps and sends log events when values change
+func (a *Agent) monitorEBPFMaps() {
+	var lastAttackCount uint64 = 0
+	var lastStealthCount uint64 = 0
+	var lastOSMutationCount uint64 = 0
+	var lastSPASuccessCount uint64 = 0
+	var lastSPAFailedCount uint64 = 0
+	initialized := false
+
+	ticker := time.NewTicker(1 * time.Second) // Giảm frequency xuống 1 giây
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Monitor attack stats (redirected to honeypot)
+		var attackKey uint32 = 0
+		var attackVal uint64
+		if err := a.ebpfLoader.PhantomObjs.AttackStats.Lookup(attackKey, &attackVal); err == nil {
+			if initialized && attackVal > lastAttackCount && attackVal > 0 {
+				diff := attackVal - lastAttackCount
+				lastAttackCount = attackVal
+				a.logChan <- fmt.Sprintf("[TRAP] 🎣 %d new connection(s) redirected to honeypot | Total: %d", diff, attackVal)
+			} else if !initialized {
+				lastAttackCount = attackVal
+			}
+		}
+
+		// Monitor stealth drops (nmap scans blocked)
+		var stealthKey uint32 = 0
+		var stealthVal uint64
+		if err := a.ebpfLoader.PhantomObjs.StealthDrops.Lookup(stealthKey, &stealthVal); err == nil {
+			if initialized && stealthVal > lastStealthCount && stealthVal > 0 {
+				diff := stealthVal - lastStealthCount
+				lastStealthCount = stealthVal
+				a.logChan <- fmt.Sprintf("[STEALTH] 👻 %d stealth scan packet(s) blocked | Total: %d", diff, stealthVal)
+			} else if !initialized {
+				lastStealthCount = stealthVal
+			}
+		}
+
+		// Monitor OS mutations
+		var osKey uint32 = 0
+		var osVal uint64
+		if err := a.ebpfLoader.PhantomObjs.OsMutations.Lookup(osKey, &osVal); err == nil {
+			if initialized && osVal > lastOSMutationCount && osVal > 0 {
+				diff := osVal - lastOSMutationCount
+				lastOSMutationCount = osVal
+				a.logChan <- fmt.Sprintf("[OS-MUTATION] 🔄 %d OS fingerprint mutation(s) applied | Total: %d", diff, osVal)
+			} else if !initialized {
+				lastOSMutationCount = osVal
+			}
+		}
+
+		// Monitor SPA authentication success
+		var spaSuccessKey uint32 = 0
+		var spaSuccessVal uint64
+		if err := a.ebpfLoader.PhantomObjs.SpaAuthSuccess.Lookup(spaSuccessKey, &spaSuccessVal); err == nil {
+			if initialized && spaSuccessVal > lastSPASuccessCount && spaSuccessVal > 0 {
+				diff := spaSuccessVal - lastSPASuccessCount
+				lastSPASuccessCount = spaSuccessVal
+				a.logChan <- fmt.Sprintf("[SPA] ✓ %d successful authentication(s) | Total: %d", diff, spaSuccessVal)
+			} else if !initialized {
+				lastSPASuccessCount = spaSuccessVal
+			}
+		}
+
+		// Monitor SPA authentication failures
+		var spaFailedKey uint32 = 0
+		var spaFailedVal uint64
+		if err := a.ebpfLoader.PhantomObjs.SpaAuthFailed.Lookup(spaFailedKey, &spaFailedVal); err == nil {
+			if initialized && spaFailedVal > lastSPAFailedCount && spaFailedVal > 0 {
+				diff := spaFailedVal - lastSPAFailedCount
+				lastSPAFailedCount = spaFailedVal
+				a.logChan <- fmt.Sprintf("[SPA] ✗ %d failed authentication attempt(s) | Total: %d", diff, spaFailedVal)
+			} else if !initialized {
+				lastSPAFailedCount = spaFailedVal
+			}
+		}
+
+		// Mark as initialized after first iteration
+		if !initialized {
+			initialized = true
+		}
+	}
 }
 
 // initDynamicSPA initializes dynamic SPA handler and loads configuration
@@ -181,6 +270,7 @@ func (a *Agent) initDynamicSPA() error {
 		nil, // totp secret map (from dynamic SPA program - not available yet)
 		nil, // hmac secret map (from dynamic SPA program - not available yet)
 		nil, // config map (from dynamic SPA program - not available yet)
+		a.ebpfLoader.PhantomObjs.SpaAuthFailed, // failed map
 	)
 
 	// Load configuration (if maps are available)
@@ -215,6 +305,7 @@ func (a *Agent) initStaticSPA() error {
 	mapLoader := spa.NewMapLoader(
 		a.ebpfLoader.PhantomObjs.SpaWhitelist,
 		nil, nil, nil, nil, // Dynamic SPA maps not needed for static mode
+		a.ebpfLoader.PhantomObjs.SpaAuthFailed, // failed map
 	)
 
 	// Create and start handler with static token

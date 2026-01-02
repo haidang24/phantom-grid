@@ -34,6 +34,7 @@ type OutputMode string
 const (
 	OutputModeDashboard OutputMode = "dashboard" // Terminal dashboard only
 	OutputModeELK       OutputMode = "elk"       // Elasticsearch only
+	OutputModeWeb       OutputMode = "web"       // Web interface only
 	OutputModeBoth      OutputMode = "both"      // Both dashboard and ELK
 )
 

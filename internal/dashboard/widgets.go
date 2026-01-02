@@ -66,14 +66,14 @@ func (d *Dashboard) createWidgets(termWidth, termHeight int) *DashboardWidgets {
 	// Statistics boxes
 	w.redirectedBox = widgets.NewParagraph()
 	w.redirectedBox.Title = " ═══ REDIRECTED TO HONEYPOT ═══ "
-	w.redirectedBox.Text = "\n\n       0"
+	w.redirectedBox.Text = "\n\n   0\n\n   Total Attacks"
 	w.redirectedBox.SetRect(termWidth/2+10, 6, termWidth/2+25, 11)
 	w.redirectedBox.TextStyle.Fg = ui.ColorYellow
 	w.redirectedBox.BorderStyle.Fg = ui.ColorYellow
 
 	w.stealthBox = widgets.NewParagraph()
 	w.stealthBox.Title = " ═══ STEALTH SCAN DROPS ═══ "
-	w.stealthBox.Text = "\n\n       0"
+	w.stealthBox.Text = "\n\n   0\n\n   Stealth Scans"
 	w.stealthBox.SetRect(termWidth/2+25, 6, termWidth/2+40, 11)
 	w.stealthBox.TextStyle.Fg = ui.ColorRed
 	w.stealthBox.BorderStyle.Fg = ui.ColorRed
@@ -87,21 +87,21 @@ func (d *Dashboard) createWidgets(termWidth, termHeight int) *DashboardWidgets {
 
 	w.osMutationsBox = widgets.NewParagraph()
 	w.osMutationsBox.Title = " ═══ OS PERSONALITY MUTATIONS ═══ "
-	w.osMutationsBox.Text = "\n\n       0"
+	w.osMutationsBox.Text = "\n\n   0\n\n   OS Mutations"
 	w.osMutationsBox.SetRect(termWidth/2+10, 11, termWidth/2+25, 16)
 	w.osMutationsBox.TextStyle.Fg = ui.ColorCyan
 	w.osMutationsBox.BorderStyle.Fg = ui.ColorCyan
 
 	w.spaSuccessBox = widgets.NewParagraph()
 	w.spaSuccessBox.Title = " ═══ SPA AUTH SUCCESS ═══ "
-	w.spaSuccessBox.Text = "\n\n       0"
+	w.spaSuccessBox.Text = "\n\n   0\n\n   Successful"
 	w.spaSuccessBox.SetRect(termWidth/2+25, 11, termWidth/2+40, 16)
 	w.spaSuccessBox.TextStyle.Fg = ui.ColorGreen
 	w.spaSuccessBox.BorderStyle.Fg = ui.ColorGreen
 
 	w.spaFailedBox = widgets.NewParagraph()
 	w.spaFailedBox.Title = " ═══ SPA AUTH FAILED ═══ "
-	w.spaFailedBox.Text = "\n\n       0"
+	w.spaFailedBox.Text = "\n\n   0\n\n   Failed"
 	w.spaFailedBox.SetRect(termWidth/2+40, 11, termWidth, 16)
 	w.spaFailedBox.TextStyle.Fg = ui.ColorRed
 	w.spaFailedBox.BorderStyle.Fg = ui.ColorRed

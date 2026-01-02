@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 func TestNewHandler(t *testing.T) {
 	spaConfig := config.DefaultDynamicSPAConfig()
 	verifier := NewVerifier(spaConfig)
-	mapLoader := NewMapLoader(nil, nil, nil, nil, nil) // Mock map loader
+	mapLoader := NewMapLoader(nil, nil, nil, nil, nil, nil) // Mock map loader
 	logChan := make(chan string, 10)
 
 	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
@@ -140,18 +141,20 @@ func TestProcessPacket_StaticPacket(t *testing.T) {
 
 	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")
 
-	// Process static packet (should be ignored by handler)
+	// Process static packet (should be logged but not processed by handler)
 	staticToken := []byte(config.SPASecretToken)
 	clientIP := net.IPv4(192, 168, 1, 100)
 
 	handler.processPacket(staticToken, clientIP)
 
-	// Should not log anything (static packets handled by eBPF)
+	// Should log that static packet was received (for visibility)
 	select {
-	case <-logChan:
-		t.Error("Static packet should not be processed by handler")
+	case msg := <-logChan:
+		if !strings.Contains(msg, "Static token packet received") {
+			t.Errorf("Expected log message about static packet, got: %s", msg)
+		}
 	case <-time.After(100 * time.Millisecond):
-		// Expected - no log message
+		t.Error("Expected log message for static packet (for visibility)")
 	}
 }
 

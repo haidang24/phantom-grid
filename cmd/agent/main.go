@@ -11,6 +11,7 @@ import (
 	"phantom-grid/internal/agent"
 	"phantom-grid/internal/config"
 	"phantom-grid/internal/dashboard"
+	"phantom-grid/internal/web"
 )
 
 func main() {
@@ -34,7 +35,8 @@ func main() {
 
 	// Parse command line arguments
 	interfaceFlag := flag.String("interface", "", "Network interface name (e.g., eth0, ens33). If not specified, auto-detect will be used.")
-	outputModeFlag := flag.String("output", "dashboard", "Output mode: 'dashboard', 'elk', or 'both'")
+	outputModeFlag := flag.String("output", "dashboard", "Output mode: 'dashboard', 'elk', 'web', or 'both'")
+	webPortFlag := flag.Int("web-port", 8080, "Web interface port (default: 8080)")
 	elkAddressFlag := flag.String("elk-address", "http://localhost:9200", "Elasticsearch address (comma-separated for multiple)")
 	elkIndexFlag := flag.String("elk-index", "phantom-grid", "Elasticsearch index name")
 	elkUserFlag := flag.String("elk-user", "", "Elasticsearch username (optional)")
@@ -67,10 +69,12 @@ func main() {
 		outputMode = config.OutputModeDashboard
 	case "elk":
 		outputMode = config.OutputModeELK
+	case "web":
+		outputMode = config.OutputModeWeb
 	case "both":
 		outputMode = config.OutputModeBoth
 	default:
-		log.Fatalf("[!] Invalid output mode: %s. Use 'dashboard', 'elk', or 'both'", *outputModeFlag)
+		log.Fatalf("[!] Invalid output mode: %s. Use 'dashboard', 'elk', 'web', or 'both'", *outputModeFlag)
 	}
 
 	// Configure ELK
@@ -90,9 +94,9 @@ func main() {
 		log.Printf("[SYSTEM] ELK output enabled: %s (index: %s)", strings.Join(elkConfig.Addresses, ", "), elkConfig.Index)
 	}
 
-	// Create dashboard channel (only if dashboard is enabled)
+	// Create dashboard/web channel (if dashboard or web is enabled)
 	var dashboardChan chan string
-	if outputMode == config.OutputModeDashboard || outputMode == config.OutputModeBoth {
+	if outputMode == config.OutputModeDashboard || outputMode == config.OutputModeBoth || outputMode == config.OutputModeWeb {
 		dashboardChan = make(chan string, 1000)
 	}
 
@@ -184,7 +188,7 @@ func main() {
 		log.Fatalf("[!] Failed to start agent: %v", err)
 	}
 
-	// Start dashboard only if enabled
+	// Start dashboard or web interface based on output mode
 	if outputMode == config.OutputModeDashboard || outputMode == config.OutputModeBoth {
 		// Get eBPF objects for dashboard
 		phantomObjs, egressObjs := agentInstance.GetEBPFObjects()
@@ -197,6 +201,29 @@ func main() {
 			dashboardChan,
 		)
 		dashboardInstance.Start()
+	} else if outputMode == config.OutputModeWeb {
+		// Get eBPF objects for web interface
+		phantomObjs, egressObjs := agentInstance.GetEBPFObjects()
+
+		// Start web server
+		webServer := web.NewServer(
+			agentInstance.GetInterfaceName(),
+			*webPortFlag,
+			phantomObjs,
+			egressObjs,
+			dashboardChan,
+		)
+		
+		// Start web server in goroutine
+		go func() {
+			if err := webServer.Start(); err != nil {
+				log.Fatalf("[!] Failed to start web server: %v", err)
+			}
+		}()
+		
+		// Wait for interrupt
+		log.Printf("[SYSTEM] Web interface running. Press Ctrl+C to stop.")
+		select {} // Block forever
 	} else {
 		// ELK-only mode: wait for interrupt
 		log.Printf("[SYSTEM] Running in ELK-only mode. Press Ctrl+C to stop.")
