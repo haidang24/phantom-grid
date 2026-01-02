@@ -270,6 +270,7 @@ func (a *Agent) initDynamicSPA() error {
 		nil, // totp secret map (from dynamic SPA program - not available yet)
 		nil, // hmac secret map (from dynamic SPA program - not available yet)
 		nil, // config map (from dynamic SPA program - not available yet)
+		a.ebpfLoader.PhantomObjs.SpaAuthSuccess, // success map
 		a.ebpfLoader.PhantomObjs.SpaAuthFailed, // failed map
 	)
 
@@ -305,6 +306,7 @@ func (a *Agent) initStaticSPA() error {
 	mapLoader := spa.NewMapLoader(
 		a.ebpfLoader.PhantomObjs.SpaWhitelist,
 		nil, nil, nil, nil, // Dynamic SPA maps not needed for static mode
+		a.ebpfLoader.PhantomObjs.SpaAuthSuccess, // success map
 		a.ebpfLoader.PhantomObjs.SpaAuthFailed, // failed map
 	)
 

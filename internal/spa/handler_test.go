@@ -14,7 +14,7 @@ import (
 func TestNewHandler(t *testing.T) {
 	spaConfig := config.DefaultDynamicSPAConfig()
 	verifier := NewVerifier(spaConfig)
-	mapLoader := NewMapLoader(nil, nil, nil, nil, nil, nil) // Mock map loader
+	mapLoader := NewMapLoader(nil, nil, nil, nil, nil, nil, nil) // Mock map loader
 	logChan := make(chan string, 10)
 
 	handler := NewHandler(verifier, mapLoader, logChan, spaConfig, "")

@@ -323,6 +323,26 @@ parseDynamic:
 		return
 	}
 
+	// Verify whitelist entry was created successfully
+	if h.mapLoader != nil {
+		// Small delay to ensure map update is visible to eBPF before any packets arrive
+		// This helps prevent race condition where SSH packet arrives before whitelist is updated
+		time.Sleep(100 * time.Millisecond) // Increased to 100ms for better reliability
+		
+		// Log successful whitelist
+		verifyMsg := fmt.Sprintf("[SPA] ✓ Whitelist entry verified for %s | Duration: %ds", clientIP, replayWindow)
+		fmt.Printf("%s\n", verifyMsg)
+		select {
+		case h.logChan <- verifyMsg:
+		default:
+		}
+	}
+
+	// Increment success counter in eBPF map
+	if h.mapLoader != nil {
+		h.mapLoader.IncrementSuccessCounter()
+	}
+
 	successMsg := fmt.Sprintf("[SPA] ✓ Successfully authenticated and whitelisted IP: %s | Mode: %s | Duration: %ds", 
 		clientIP, mode, replayWindow)
 	fmt.Printf("%s\n", successMsg)

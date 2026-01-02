@@ -10,6 +10,20 @@ import (
 func FormatLogMessage(msg string) string {
 	timestamp := time.Now().Format("15:04:05")
 	
+	// Check if message already contains an emoji (→, ✓, ✗, 🔐, 🎣, 👻, 🔄, ⚙, ⚠, ❌)
+	// Messages from handler.go already have emojis like "[SPA] → Received..." or "[SPA] ✓ Successfully..."
+	// If it does, just add timestamp. Otherwise, determine and add appropriate prefix.
+	hasEmoji := strings.Contains(msg, "→") || strings.Contains(msg, "✓") || 
+		strings.Contains(msg, "✗") || strings.Contains(msg, "🔐") || 
+		strings.Contains(msg, "🎣") || strings.Contains(msg, "👻") || 
+		strings.Contains(msg, "🔄") || strings.Contains(msg, "⚙") || 
+		strings.Contains(msg, "⚠") || strings.Contains(msg, "❌")
+	
+	if hasEmoji {
+		// Message already has emoji, just add timestamp
+		return fmt.Sprintf("[%s] %s", timestamp, msg)
+	}
+	
 	// Determine emoji prefix based on message type
 	var prefix string
 	

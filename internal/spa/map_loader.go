@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cilium/ebpf"
 
@@ -21,18 +22,20 @@ type MapLoader struct {
 	totpSecretMap   *ebpf.Map
 	hmacSecretMap   *ebpf.Map
 	configMap       *ebpf.Map
+	successMap      *ebpf.Map // Map for tracking successful authentication attempts
 	failedMap       *ebpf.Map // Map for tracking failed authentication attempts
 }
 
 // NewMapLoader creates a new SPA map loader
 // Note: Maps must be from the dynamic SPA eBPF program
-func NewMapLoader(whitelistMap, replayMap, totpSecretMap, hmacSecretMap, configMap, failedMap *ebpf.Map) *MapLoader {
+func NewMapLoader(whitelistMap, replayMap, totpSecretMap, hmacSecretMap, configMap, successMap, failedMap *ebpf.Map) *MapLoader {
 	return &MapLoader{
 		whitelistMap:  whitelistMap,
 		replayMap:     replayMap,
 		totpSecretMap: totpSecretMap,
 		hmacSecretMap: hmacSecretMap,
 		configMap:     configMap,
+		successMap:    successMap,
 		failedMap:     failedMap,
 	}
 }
@@ -90,7 +93,7 @@ func (ml *MapLoader) WhitelistIP(ip net.IP, durationSeconds int) error {
 
 	// Calculate absolute expiry timestamp (nanoseconds since boot)
 	// eBPF uses bpf_ktime_get_ns() which returns nanoseconds since system boot
-	// We need to estimate the current boot time to calculate expiry correctly
+	// We need to use the current uptime to calculate expiry correctly
 	
 	// Read /proc/uptime to get system uptime in seconds
 	uptimeSeconds, err := getUptimeSeconds()
@@ -103,15 +106,48 @@ func (ml *MapLoader) WhitelistIP(ip net.IP, durationSeconds int) error {
 		return ml.whitelistMap.Put(ipUint32, expiry)
 	}
 	
-	// Convert uptime to nanoseconds and add duration
-	uptimeNs := uint64(uptimeSeconds * 1e9)
-	durationNs := uint64(durationSeconds) * 1000000000
-	expiry := uptimeNs + durationNs
+	// Convert current uptime to nanoseconds
+	// This is the current time since boot (what bpf_ktime_get_ns() returns)
+	currentUptimeNs := uint64(uptimeSeconds * 1e9)
 	
-	// Add a small buffer (1 second) to account for timing differences
-	expiry += 1000000000
+	// Add duration to get expiry time (still in nanoseconds since boot)
+	durationNs := uint64(durationSeconds) * 1000000000
+	expiry := currentUptimeNs + durationNs
+	
+	// Add a small buffer (2 seconds) to account for timing differences and processing delays
+	expiry += 2000000000
 
-	return ml.whitelistMap.Put(ipUint32, expiry)
+	// Update map and verify it was successful
+	// Use Update with BPF_ANY flag to ensure atomic update
+	if err := ml.whitelistMap.Update(ipUint32, expiry, ebpf.UpdateAny); err != nil {
+		return fmt.Errorf("failed to update whitelist map: %w", err)
+	}
+
+	// Verify the update was successful by reading it back multiple times if needed
+	// This ensures the map update is visible to eBPF before we return
+	var verifyExpiry uint64
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		if err := ml.whitelistMap.Lookup(ipUint32, &verifyExpiry); err == nil {
+			// Entry found, check if expiry is reasonable
+			// Note: expiry might be slightly different if uptime changed between Put and Lookup
+			// But it should be very close (within 1 second)
+			diff := int64(verifyExpiry) - int64(expiry)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff <= 1000000000 { // Within 1 second difference
+				return nil // Success!
+			}
+		}
+		// Small delay before retry (microseconds)
+		if i < maxRetries-1 {
+			time.Sleep(100 * time.Microsecond)
+		}
+	}
+
+	// If we get here, verification failed
+	return fmt.Errorf("whitelist map update verification failed after %d retries: entry not found or expiry mismatch (expected %d)", maxRetries, expiry)
 }
 
 // getUptimeSeconds reads system uptime from /proc/uptime
@@ -204,6 +240,25 @@ func (ml *MapLoader) getSPAModeValue(mode config.SPAMode) uint32 {
 	default:
 		return 0 // Default to static
 	}
+}
+
+// IncrementSuccessCounter increments the successful authentication counter in eBPF map
+func (ml *MapLoader) IncrementSuccessCounter() {
+	if ml.successMap == nil {
+		return
+	}
+	
+	var key uint32 = 0
+	var currentVal uint64 = 0
+	
+	// Read current value
+	_ = ml.successMap.Lookup(key, &currentVal)
+	
+	// Increment
+	currentVal++
+	
+	// Update map
+	_ = ml.successMap.Update(key, currentVal, ebpf.UpdateAny)
 }
 
 // IncrementFailedCounter increments the failed authentication counter in eBPF map
